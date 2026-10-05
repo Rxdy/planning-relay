@@ -58,6 +58,11 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
     if not lus_bruts and connus:
         raise GardeFou("Planning vide alors que l'agenda en contient : rien n'est supprimé")
 
+    if not cfg.dry_run:
+        # Titres écrits par une version précédente : mis à jour sans mail.
+        if n := agenda.rafraichir_titres():
+            log.info("Titres remis au format actuel : %d", n)
+
     changements = comparer(connus, lus)
     log.info("Changements : %d", len(changements))
     if not changements:
