@@ -5,7 +5,6 @@ import pytest
 from planning_relay.agenda import creneau_depuis_proprietes, evenement
 from planning_relay.alerte import doit_alerter
 from planning_relay.config import Config
-from planning_relay.mail import objet
 from planning_relay.modeles import creneau_depuis_cellule as cc
 from planning_relay.synchro import GardeFou, fenetre, passage
 
@@ -42,11 +41,11 @@ class Messagerie:
     def __init__(self):
         self.envois = []
 
-    def recapitulatif(self, changements):
+    def par_semaine(self, planning, connus, changements, aujourdhui):
         self.envois.append(changements)
 
 
-def test_fenetre_semaine_en_cours_plus_trois():
+def test_fenetre():
     assert fenetre(date(2026, 10, 7), 4) == (date(2026, 10, 7), date(2026, 11, 1))
 
 
@@ -98,13 +97,6 @@ def test_aller_retour_proprietes_agenda():
 def test_evenement_journee_entiere():
     ev = evenement(cc(MARDI, "R"), cfg())
     assert ev["start"] == {"date": "2026-10-06"} and ev["end"] == {"date": "2026-10-07"}
-
-
-def test_objet_mail():
-    from planning_relay.comparaison import comparer
-
-    chs = comparer({}, {MARDI: cc(MARDI, "R"), date(2026, 10, 13): cc(date(2026, 10, 13), "R")})
-    assert objet(cfg(), chs) == "Planning de Charlène : 2 changements (sem. 41, 42)"
 
 
 def test_alerte_seulement_au_troisieme_echec():
