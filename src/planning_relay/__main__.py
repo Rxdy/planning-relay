@@ -15,6 +15,8 @@ def main(argv: list[str] | None = None) -> int:
     sous = parser.add_subparsers(dest="commande", required=True)
     sous.add_parser("sync", help="Un passage : lire, comparer, prévenir, publier")
     sous.add_parser("alerte", help="Mail d'alerte si c'est le 3e échec consécutif")
+    ap = sous.add_parser("apercu", help="Écrit les mails des scénarios types en HTML et texte")
+    ap.add_argument("--dossier", default="apercus")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -27,6 +29,15 @@ def main(argv: list[str] | None = None) -> int:
         from .synchro import passage
 
         passage(cfg, creer_connecteur(cfg), Agenda(cfg), Messagerie(cfg))
+        return 0
+
+    if args.commande == "apercu":
+        from pathlib import Path
+
+        from .apercu import ecrire
+
+        index, *_ = ecrire(Path(args.dossier), cfg)
+        print(f"Aperçus écrits ; ouvrir {index}")
         return 0
 
     from .alerte import conclusions_precedentes, doit_alerter
