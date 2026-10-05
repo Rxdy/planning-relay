@@ -32,11 +32,12 @@ class Config:
     smtp_password: str = ""
     mail_to: list[str] = field(default_factory=list)
     # Exécution
-    semaines: int = 4
+    semaines: int = 8
     essais: int = 3
     delai_essai: int = 300
     fuseau: str = "Europe/Paris"
     dry_run: bool = False
+    dossier_etat: str = "/data"
 
     @classmethod
     def depuis_env(cls, env: dict[str, str] | None = None) -> Config:
@@ -54,14 +55,16 @@ class Config:
             calendar_id=g("CALENDAR_ID"),
             titre=g("EVENT_TITLE", "{personne} — {code}"),
             couleur=g("EVENT_COLOR_ID") or None,
-            codes_ignores=[c.upper() for c in _liste(g("SKIP_CODES"))],
+            # Repos et récup férié ne vont pas dans l'agenda : un jour vide est un repos.
+            codes_ignores=[c.upper() for c in _liste(g("SKIP_CODES") or "R,RF")],
             smtp_host=g("SMTP_HOST", "smtp.gmail.com"),
             smtp_port=int(g("SMTP_PORT", "465")),
             smtp_user=g("SMTP_USER"),
             smtp_password=g("SMTP_PASSWORD"),
             mail_to=_liste(g("MAIL_TO")),
-            semaines=int(g("WEEKS", "4")),
+            semaines=int(g("WEEKS", "8")),
             essais=int(g("FETCH_ATTEMPTS", "3")),
             delai_essai=int(g("FETCH_RETRY_DELAY", "300")),
             dry_run=g("DRY_RUN").lower() in {"1", "true", "oui", "yes"},
+            dossier_etat=g("STATE_DIR", "/data"),
         )

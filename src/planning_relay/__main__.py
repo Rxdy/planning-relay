@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 
 from .config import Config
@@ -14,33 +13,51 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="planning-relay")
     sous = parser.add_subparsers(dest="commande", required=True)
     sous.add_parser("sync", help="Un passage : lire, comparer, prévenir, publier")
-    sous.add_parser("alerte", help="Mail d'alerte si c'est le 3e échec consécutif")
+    ap = sous.add_parser("apercu", help="Écrit les mails des scénarios types en HTML et texte")
+    ap.add_argument("--dossier", default="apercus")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = Config.depuis_env()
 
     if args.commande == "sync":
-        from .agenda import Agenda
-        from .connecteurs import creer_connecteur
-        from .mail import Messagerie
-        from .synchro import passage
+        return synchro(cfg)
 
-        passage(cfg, creer_connecteur(cfg), Agenda(cfg), Messagerie(cfg))
+    if args.commande == "apercu":
+        from pathlib import Path
+
+        from .apercu import ecrire
+
+        index, *_ = ecrire(Path(args.dossier), cfg)
+        print(f"Aperçus écrits ; ouvrir {index}")
         return 0
 
-    from .alerte import conclusions_precedentes, doit_alerter
-    from .mail import Messagerie
 
-    if doit_alerter(conclusions_precedentes()):
-        lien = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions"
-        Messagerie(cfg).envoyer(
-            f"Planning de {cfg.personne} : synchro en panne",
-            "La synchro du planning a échoué 3 fois de suite.\n\n"
-            "Causes probables : identifiants expirés, site modifié, ligne introuvable.\n"
-            f"Détails : {lien}",
-        )
-        log.info("Alerte envoyée")
+
+def synchro(cfg: Config) -> int:
+    from .agenda import Agenda
+    from .alerte import Compteur, doit_alerter
+    from .connecteurs import creer_connecteur
+    from .mail import Messagerie
+    from .synchro import passage
+
+    compteur = Compteur(cfg.dossier_etat)
+    try:
+        passage(cfg, creer_connecteur(cfg), Agenda(cfg), Messagerie(cfg))
+    except Exception as e:
+        n = compteur.echec()
+        # Ne logguer que le type : un message d'erreur peut contenir des données.
+        log.error("Passage en échec (%s), %d échec(s) d'affilée", type(e).__name__, n)
+        if doit_alerter(n):
+            Messagerie(cfg).envoyer(
+                f"Planning de {cfg.personne} : synchro en panne",
+                f"La synchro du planning a échoué {n} fois de suite (dernière erreur : {type(e).__name__}).\n\n"
+                "Causes probables : identifiants expirés, site modifié, agenda inaccessible.\n"
+                "Journal sur le Pi : journalctl -u planning-relay -n 100",
+            )
+            log.info("Alerte envoyée")
+        return 1
+    compteur.succes()
     return 0
 
 

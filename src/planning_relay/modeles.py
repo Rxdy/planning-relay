@@ -16,6 +16,7 @@ class Creneau:
     fin: time | None = None
     duree: str | None = None  # "7h30", tel qu'affiché
     pause: str | None = None  # "30 min", tel qu'affiché
+    intitule: str | None = None  # "RECEP SOIR", "Récup Férié"
 
     @property
     def journee_entiere(self) -> bool:
