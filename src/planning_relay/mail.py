@@ -60,9 +60,19 @@ def _jour(j: date) -> str:
     return f"{JOURS[j.weekday()]} {j:%d/%m}"
 
 
+def _nom(c: Creneau) -> str:
+    """Matin, Soir ou Nuit ; pour une absence journée entière, son intitulé Silae."""
+    p = poste(c)
+    return p if p != "Autre" else (c.intitule or c.code)
+
+
 def _creneau(c: Creneau | None) -> str:
     # Un jour sans créneau est un repos : R et RF ne sont pas reportés.
-    return c.libelle() if c else "Repos"
+    if c is None:
+        return "Repos"
+    if c.journee_entiere:
+        return _nom(c)
+    return f"{_nom(c)} {c.debut:%H:%M}–{c.fin:%H:%M}"
 
 
 def _horaires(c: Creneau) -> str:
@@ -72,25 +82,22 @@ def _horaires(c: Creneau) -> str:
     return f"{c.debut:%H:%M}–{c.fin:%H:%M}{lendemain}"
 
 
-def _complet(c: Creneau) -> str:
-    return f"{c.libelle()} ({c.intitule})" if c.intitule else c.libelle()
-
-
 def details(ch: Changement) -> list[str]:
     """Ce qui a changé ce jour-là, en phrases courtes."""
     if ch.type == "ajout":
-        return [f"Repos → {_complet(ch.apres)}"]
+        return [f"Repos → {_creneau(ch.apres)}"]
     if ch.type == "suppr":
-        return [f"{_complet(ch.avant)} → Repos"]
+        return [f"{_creneau(ch.avant)} → Repos"]
     a, b = ch.avant, ch.apres
     lignes = []
-    if a.code != b.code:
-        intitules = f" ({a.intitule} → {b.intitule})" if a.intitule and b.intitule and a.intitule != b.intitule else ""
-        lignes.append(f"Poste : {a.code} → {b.code}{intitules}")
+    if _nom(a) != _nom(b):
+        lignes.append(f"Poste : {_nom(a)} → {_nom(b)}")
     if (a.debut, a.fin) != (b.debut, b.fin):
         lignes.append(f"Horaires : {_horaires(a)} → {_horaires(b)}")
     if a.duree and b.duree and a.duree != b.duree:
         lignes.append(f"Durée : {a.duree} → {b.duree}")
+    if not lignes:  # même poste et mêmes horaires : seul le code Silae a changé
+        lignes.append(f"Code Silae : {a.code} → {b.code}")
     return lignes
 
 
@@ -111,13 +118,16 @@ def texte(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Cha
         j = lundi + timedelta(days=i)
         c = planning.get(j)
         marque = "*" if j in par_jour and not publiee else " "
-        ligne = f"{marque} {_jour(j)}   {_creneau(c):<18} {(c.intitule or '') if c else ''}".rstrip()
+        if c is None or c.journee_entiere:
+            contenu = _creneau(c)
+        else:
+            contenu = f"{c.debut:%H:%M}–{c.fin:%H:%M}   {_nom(c)}"
+        ligne = f"{marque} {_jour(j)}   {contenu}"
         if j < aujourdhui:
             ligne += "   [passé]"
         lignes.append(ligne)
-    lignes += ["", "Postes : Matin (≈ 7h–15h) · Soir (≈ 15h–22h45) · Nuit (≈ 22h45–7h)"]
     if not publiee:
-        lignes.append("* = jour qui a changé")
+        lignes += ["", "* = jour qui a changé"]
     return "\n".join(lignes)
 
 
@@ -161,15 +171,10 @@ def _pastille(couleur: str) -> str:
 
 def legende(planning: dict[date, Creneau], lundi: date, aujourdhui: date, publiee: bool) -> str:
     semaine = [planning[j] for j in sorted(planning) if lundi <= j <= lundi + timedelta(days=6)]
-    codes: dict[str, list[str]] = {}
-    for c in semaine:
-        codes.setdefault(poste(c), [])
-        if c.code not in codes[poste(c)]:
-            codes[poste(c)].append(c.code)
+    presents = {poste(c) for c in semaine} - {"Autre"}
     postes = "".join(
-        f"<span style='margin-right:14px;white-space:nowrap'>{_pastille(POSTES[p])}{p} "
-        f"<span style='color:#888'>({escape(', '.join(cs))})</span></span>"
-        for p, cs in sorted(codes.items(), key=lambda kv: list(POSTES).index(kv[0]))
+        f"<span style='margin-right:14px;white-space:nowrap'>{_pastille(POSTES[p])}{p}</span>"
+        for p in POSTES if p in presents
     )
     reperes = []
     if not publiee:
@@ -210,12 +215,16 @@ def html(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Chan
         surligne = ch is not None and not publiee
         fond = "#fff4cc" if surligne else "transparent"
         couleur = "#999" if j < aujourdhui else "#222"
-        creneau = (f"{_pastille(POSTES[poste(c)])}<strong>{escape(_creneau(c))}</strong>"
-                   if c else "<span style='color:#999;margin-left:16px'>Repos</span>")
-        if c and c.intitule:
-            creneau += f"<br><span style='color:#666;font-size:13px'>{escape(c.intitule)}</span>"
+        # Carré de couleur et horaires sur une ligne, le poste en gris dessous
+        if c is None:
+            creneau = "<span style='color:#999;margin-left:16px'>Repos</span>"
+        elif c.journee_entiere:
+            creneau = f"{_pastille(POSTES['Autre'])}<strong>{escape(_nom(c))}</strong>"
+        else:
+            creneau = (f"{_pastille(POSTES[poste(c)])}<strong>{c.debut:%H:%M}–{c.fin:%H:%M}</strong>"
+                       f"<br><span style='color:#666;font-size:13px;margin-left:16px'>{escape(_nom(c))}</span>")
         if surligne and ch.avant:
-            creneau += f"<br><span style='color:#b42318;font-size:13px'>avant : <s>{escape(_creneau(ch.avant))}</s></span>"
+            creneau += f"<br><span style='color:#b42318;font-size:13px;margin-left:16px'>avant : <s>{escape(_creneau(ch.avant))}</s></span>"
         etiquette = (
             f"<span style='color:{COULEURS[ch.type]};font-size:12px;font-weight:600'>{ETIQUETTES[ch.type]}</span>"
             if surligne else ""
