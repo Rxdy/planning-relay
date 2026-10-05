@@ -8,20 +8,33 @@ Un passage : lire la ligne de la personne suivie (les collègues sont écartés 
 
 `dev` → `staging` → `main`, toutes protégées : passage par une pull request et CI verte obligatoires. Chaque merge publie l'image `ghcr.io/rxdy/planning-relay` avec le tag `dev`, `staging` ou `latest`.
 
-## Exécution
+## Exécution sur rp-meliodas
 
-`.github/workflows/sync.yml` tourne à la minute 5 de chaque heure sur le Raspberry (runner auto-hébergé `self-hosted, linux, ARM64`). Les identifiants n'existent que dans les secrets GitHub et en mémoire pendant le passage. Un lancement manuel permet de choisir le tag de l'image et le mode `dry_run`.
+Comme les autres services du Pi : un dossier `~/planning-relay` avec `docker-compose.prod.yml` et un `.env` en `600`. Le minuteur systemd `planning-relay.timer` lance un passage à la minute 5 de chaque heure et tire l'image `latest` à chaque fois. Les fichiers sont dans [deploy/](deploy/).
 
-| Nom | Type | Rôle |
-|---|---|---|
-| `PLATFORM_USER`, `PLATFORM_PASSWORD` | secret | Connexion à sirh.software |
-| `GOOGLE_SA_JSON` | secret | Clé du compte de service (scope `calendar.events`) |
-| `SMTP_USER`, `SMTP_PASSWORD` | secret | Expéditeur Gmail et mot de passe d'application |
-| `PERSON_MATCH` | variable | Matricule Silae de la personne suivie (champ `employee`) |
-| `CALENDAR_ID` | variable | Agenda de l'affichage |
-| `MAIL_TO` | variable | Destinataires, séparés par des virgules |
-| `SKIP_CODES` | variable | Codes à ne pas afficher, par exemple `R,RF` |
-| `EVENT_COLOR_ID` | variable | Couleur Google Agenda (1 à 11) |
+```sh
+# sur le Pi
+mkdir -p ~/planning-relay && cd ~/planning-relay
+# copier deploy/docker-compose.prod.yml et deploy/.env.example (→ .env, à remplir)
+chmod 600 .env
+sudo cp planning-relay.service planning-relay.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now planning-relay.timer
+journalctl -u planning-relay -n 50     # journal des passages
+```
+
+Au 3e échec d'affilée, un mail d'alerte part, une seule fois par série. Le compteur vit dans le volume `planning-relay-data`.
+
+| Variable | Rôle |
+|---|---|
+| `PLATFORM_USER`, `PLATFORM_PASSWORD` | Connexion à sirh.software |
+| `PERSON_MATCH` | Matricule Silae de la personne suivie (champ `employee`) |
+| `GOOGLE_SA_JSON` | Clé du compte de service (scope `calendar.events`) |
+| `CALENDAR_ID` | Agenda de l'affichage |
+| `SMTP_USER`, `SMTP_PASSWORD` | Expéditeur Gmail et mot de passe d'application |
+| `MAIL_TO` | Destinataires, séparés par des virgules |
+| `SKIP_CODES` | Codes à ne pas reporter (défaut `R,RF` : un jour vide est un repos) |
+| `EVENT_COLOR_ID` | Couleur Google Agenda (1 à 11) |
+| `DRY_RUN` | `1` : ne rien écrire ni envoyer |
 
 ## Développement
 

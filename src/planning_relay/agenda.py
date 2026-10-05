@@ -2,6 +2,11 @@
 
 Seuls les événements portant la propriété privée `planning_relay` sont lus ou
 modifiés : les saisies manuelles restent intactes.
+
+Les changements restent visibles sur l'affichage : un créneau modifié porte
+« (modifié) » et l'ancien créneau en description ; un créneau supprimé n'est
+pas effacé mais grisé avec « (supprimé) ». Ce marqueur ne compte pas comme
+créneau connu, et il est réutilisé si un créneau revient ce jour-là.
 """
 
 from __future__ import annotations
@@ -14,6 +19,8 @@ from .config import Config
 from .modeles import Changement, Creneau
 
 PROP = "planning_relay"
+MENTIONS = {"modifie": " (modifié)", "supprime": " (supprimé)"}
+GRIS = "8"  # Graphite dans la palette Google Agenda
 
 
 def _t(valeur: str) -> time | None:
@@ -32,7 +39,13 @@ def creneau_depuis_proprietes(props: dict[str, str]) -> Creneau:
     )
 
 
-def evenement(c: Creneau, cfg: Config) -> dict:
+def _libelle(c: Creneau) -> str:
+    return c.libelle() if c else "Repos"
+
+
+def evenement(c: Creneau, cfg: Config, etat: str = "", avant: Creneau | None = None,
+              le: date | None = None) -> dict:
+    """etat : "" (normal), "modifie" (avant = l'ancien créneau) ou "supprime"."""
     props = {
         PROP: cfg.cle_synchro,
         "jour": c.jour.isoformat(),
@@ -42,15 +55,24 @@ def evenement(c: Creneau, cfg: Config) -> dict:
         "duree": c.duree or "",
         "pause": c.pause or "",
         "intitule": c.intitule or "",
+        "etat": etat,
     }
-    details = [c.intitule or "", f"Durée : {c.duree}" if c.duree else "", f"Pause : {c.pause}" if c.pause else ""]
+    quand = f" le {le:%d/%m}" if le else ""
+    entete = {
+        "modifie": f"Modifié{quand} — avant : {_libelle(avant)}",
+        "supprime": f"Supprimé du planning{quand}.",
+    }.get(etat, "")
+    details = [entete, c.intitule or "", f"Durée : {c.duree}" if c.duree else "", f"Pause : {c.pause}" if c.pause else ""]
     corps = {
-        "summary": cfg.titre.format(personne=cfg.personne, code=c.code),
+        "summary": cfg.titre.format(personne=cfg.personne, code=c.code) + MENTIONS.get(etat, ""),
         "description": "\n".join(d for d in details if d) + "\n\nSynchronisé depuis Silae RH Suite.",
         "extendedProperties": {"private": props},
         "reminders": {"useDefault": False},
     }
-    if cfg.couleur:
+    if etat == "supprime":
+        corps["colorId"] = GRIS
+        corps["transparency"] = "transparent"  # n'occupe plus le créneau
+    elif cfg.couleur:
         corps["colorId"] = cfg.couleur
     if c.journee_entiere:
         corps["start"] = {"date": c.jour.isoformat()}
@@ -67,6 +89,7 @@ class Agenda:
         self.cfg = cfg
         self.service = service or self._service()
         self._ids: dict[date, str] = {}
+        self._marqueurs: dict[date, tuple[str, Creneau]] = {}  # créneaux supprimés encore affichés
 
     def _service(self):
         from google.oauth2 import service_account
@@ -92,12 +115,20 @@ class Agenda:
         }
         connus: dict[date, Creneau] = {}
         self._ids.clear()
+        self._marqueurs.clear()
         requete = self.service.events().list(**params)
         while requete is not None:
             reponse = requete.execute()
             for ev in reponse.get("items", []):
-                c = creneau_depuis_proprietes(ev["extendedProperties"]["private"])
+                props = ev["extendedProperties"]["private"]
+                c = creneau_depuis_proprietes(props)
                 if not debut <= c.jour <= fin:
+                    continue
+                if props.get("etat") == "supprime":
+                    if c.jour in self._marqueurs:
+                        self._supprimer(ev["id"])
+                    else:
+                        self._marqueurs[c.jour] = (ev["id"], c)
                     continue
                 if c.jour in connus:
                     # Doublon laissé par une exécution interrompue : on le retire.
@@ -108,19 +139,22 @@ class Agenda:
             requete = self.service.events().list_next(requete, reponse)
         return connus
 
-    def appliquer(self, changements: list[Changement]) -> None:
-        events = self.service.events()
+    def appliquer(self, changements: list[Changement], aujourdhui: date | None = None) -> None:
+        aujourdhui = aujourdhui or datetime.now(ZoneInfo(self.cfg.fuseau)).date()
         for ch in changements:
-            if ch.type == "ajout":
-                events.insert(calendarId=self.cfg.calendar_id, body=evenement(ch.apres, self.cfg)).execute()
+            if ch.type == "ajout" and ch.jour in self._marqueurs:
+                # Un créneau revient sur un jour supprimé : c'est une modification.
+                id_, ancien = self._marqueurs.pop(ch.jour)
+                self._mettre_a_jour(id_, evenement(ch.apres, self.cfg, "modifie", ancien, aujourdhui))
+            elif ch.type == "ajout":
+                self.service.events().insert(calendarId=self.cfg.calendar_id, body=evenement(ch.apres, self.cfg)).execute()
             elif ch.type == "modif":
-                events.update(
-                    calendarId=self.cfg.calendar_id,
-                    eventId=self._ids[ch.jour],
-                    body=evenement(ch.apres, self.cfg),
-                ).execute()
+                self._mettre_a_jour(self._ids[ch.jour], evenement(ch.apres, self.cfg, "modifie", ch.avant, aujourdhui))
             else:
-                self._supprimer(self._ids[ch.jour])
+                self._mettre_a_jour(self._ids[ch.jour], evenement(ch.avant, self.cfg, "supprime", le=aujourdhui))
+
+    def _mettre_a_jour(self, event_id: str, corps: dict) -> None:
+        self.service.events().update(calendarId=self.cfg.calendar_id, eventId=event_id, body=corps).execute()
 
     def _supprimer(self, event_id: str) -> None:
         self.service.events().delete(calendarId=self.cfg.calendar_id, eventId=event_id).execute()
