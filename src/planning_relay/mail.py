@@ -18,7 +18,7 @@ from .modeles import Changement, Creneau
 
 JOURS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
 MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
-ETIQUETTES = {"ajout": "Nouveau", "modif": "Modifié", "suppr": "Supprimé"}
+ETIQUETTES = {"ajout": "Ajouté", "modif": "Modifié", "suppr": "Annulé"}
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,8 @@ def _jour(j: date) -> str:
 
 
 def _creneau(c: Creneau | None) -> str:
-    return c.libelle() if c else "—"
+    # Un jour sans créneau est un repos : R et RF ne sont pas reportés.
+    return c.libelle() if c else "Repos"
 
 
 def _horaires(c: Creneau) -> str:
@@ -78,9 +79,9 @@ def _complet(c: Creneau) -> str:
 def details(ch: Changement) -> list[str]:
     """Ce qui a changé ce jour-là, en phrases courtes."""
     if ch.type == "ajout":
-        return [f"Ajouté : {_complet(ch.apres)}"]
+        return [f"Repos → {_complet(ch.apres)}"]
     if ch.type == "suppr":
-        return [f"Supprimé : {_complet(ch.avant)}"]
+        return [f"{_complet(ch.avant)} → Repos"]
     a, b = ch.avant, ch.apres
     lignes = []
     if a.code != b.code:
@@ -148,7 +149,7 @@ def html(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Chan
         surligne = ch is not None and not publiee
         fond = "#fff4cc" if surligne else "transparent"
         couleur = "#999" if j < aujourdhui else "#222"
-        creneau = f"<strong>{escape(_creneau(c))}</strong>"
+        creneau = f"<strong>{escape(_creneau(c))}</strong>" if c else "<span style='color:#999'>Repos</span>"
         if c and c.intitule:
             creneau += f"<br><span style='color:#666;font-size:13px'>{escape(c.intitule)}</span>"
         if surligne and ch.avant:

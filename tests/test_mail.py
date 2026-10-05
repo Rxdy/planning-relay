@@ -91,7 +91,7 @@ def test_jours_passes_marques_et_grises():
 
 
 def test_jour_vide_affiche_un_tiret():
-    assert "* mer. 07/10   —" in un_mail("suppression").texte
+    assert "* mer. 07/10   Repos" in un_mail("suppression").texte
 
 
 # --- Détail du changement --------------------------------------------------
@@ -109,9 +109,8 @@ def test_changement_de_poste_detaille():
 
 def test_repos_devient_travail():
     assert section(un_mail("repos-devient-travail").texte, "CE QUI CHANGE") == [
-        "- jeu. 08/10 · Modifié",
-        "    Poste : R → 07H (Repos → MATIN)",
-        "    Horaires : journée entière → 07:00–15:45",
+        "- jeu. 08/10 · Ajouté",
+        "    Repos → 07H 07:00–15:45 (MATIN)",
     ]
 
 
@@ -124,21 +123,21 @@ def test_horaires_seuls_pas_de_ligne_poste():
 
 def test_suppression():
     assert section(un_mail("suppression").texte, "CE QUI CHANGE") == [
-        "- mer. 07/10 · Supprimé",
-        "    Supprimé : NIGHT 22:45–07:00 (Semaine)",
+        "- mer. 07/10 · Annulé",
+        "    NIGHT 22:45–07:00 (Semaine) → Repos",
     ]
 
 
 def test_ajout_dans_semaine_connue():
     assert section(un_mail("ajout-semaine-connue").texte, "CE QUI CHANGE") == [
-        "- mer. 07/10 · Nouveau",
-        "    Ajouté : SOIR 14:45–22:45 (RECEP SOIR)",
+        "- mer. 07/10 · Ajouté",
+        "    Repos → SOIR 14:45–22:45 (RECEP SOIR)",
     ]
 
 
 def test_plusieurs_changements_dans_l_ordre_des_jours():
     titres = [l for l in section(un_mail("plusieurs-changements").texte, "CE QUI CHANGE") if l.startswith("-")]
-    assert titres == ["- mer. 07/10 · Modifié", "- jeu. 08/10 · Modifié", "- sam. 10/10 · Modifié"]
+    assert titres == ["- mer. 07/10 · Modifié", "- jeu. 08/10 · Ajouté", "- sam. 10/10 · Ajouté"]
     marques = [l[2:12] for l in lignes_semaine(un_mail("plusieurs-changements").texte) if l.startswith("*")]
     assert marques == ["mer. 07/10", "jeu. 08/10", "sam. 10/10"]
 
@@ -210,3 +209,9 @@ def test_apercu_ecrit_un_fichier_par_mail(tmp_path):
     assert len(fichiers) == nb_mails + 1
     assert (tmp_path / "index.html").read_text(encoding="utf-8").count("<section") == nb_mails
     assert (tmp_path / "changement-poste-1.txt").read_text(encoding="utf-8").startswith("Objet : Planning de Charlène")
+
+
+def test_repos_jamais_reportes_dans_le_planning():
+    m = un_mail("publiee")
+    assert "jeu. 08/10   Repos" in m.texte and "ven. 09/10   Repos" in m.texte
+    assert " R " not in m.texte and "RF" not in m.texte

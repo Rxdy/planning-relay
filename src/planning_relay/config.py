@@ -54,7 +54,8 @@ class Config:
             calendar_id=g("CALENDAR_ID"),
             titre=g("EVENT_TITLE", "{personne} — {code}"),
             couleur=g("EVENT_COLOR_ID") or None,
-            codes_ignores=[c.upper() for c in _liste(g("SKIP_CODES"))],
+            # Repos et récup férié ne vont pas dans l'agenda : un jour vide est un repos.
+            codes_ignores=[c.upper() for c in _liste(g("SKIP_CODES") or "R,RF")],
             smtp_host=g("SMTP_HOST", "smtp.gmail.com"),
             smtp_port=int(g("SMTP_PORT", "465")),
             smtp_user=g("SMTP_USER"),

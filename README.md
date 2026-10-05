@@ -20,7 +20,7 @@ Un passage : lire la ligne de la personne suivie (les collègues sont écartés 
 | `PERSON_MATCH` | variable | Matricule Silae de la personne suivie (champ `employee`) |
 | `CALENDAR_ID` | variable | Agenda de l'affichage |
 | `MAIL_TO` | variable | Destinataires, séparés par des virgules |
-| `SKIP_CODES` | variable | Codes à ne pas afficher, par exemple `R,RF` |
+| `SKIP_CODES` | variable | Codes à ne pas reporter (défaut `R,RF` : un jour vide est un repos) |
 | `EVENT_COLOR_ID` | variable | Couleur Google Agenda (1 à 11) |
 
 ## Développement

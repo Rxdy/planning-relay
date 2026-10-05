@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -58,7 +58,7 @@ def test_rien_ne_change_ni_mail_ni_ecriture():
 
 def test_un_changement_un_mail_puis_ecriture():
     agenda, mail = Agenda({}), Messagerie()
-    ch = passage(cfg(), Connecteur([cc(MARDI, "R")]), agenda, mail, LUNDI)
+    ch = passage(cfg(), Connecteur([cc(MARDI, "SOIR", "14:45 - 22:45")]), agenda, mail, LUNDI)
     assert len(mail.envois) == 1 and agenda.appliques == ch
 
 
@@ -82,7 +82,7 @@ def test_codes_ignores():
 
 def test_dry_run_ne_touche_a_rien():
     agenda, mail = Agenda({}), Messagerie()
-    assert passage(cfg(DRY_RUN="1"), Connecteur([cc(MARDI, "R")]), agenda, mail, LUNDI)
+    assert passage(cfg(DRY_RUN="1"), Connecteur([cc(MARDI, "SOIR", "14:45 - 22:45")]), agenda, mail, LUNDI)
     assert mail.envois == [] and agenda.appliques is None
 
 
@@ -104,3 +104,11 @@ def test_alerte_seulement_au_troisieme_echec():
     assert not doit_alerter(["failure", "success"])
     assert doit_alerter(["failure", "failure", "success"])
     assert not doit_alerter(["failure", "failure", "failure"])
+
+
+def test_repos_ignores_par_defaut_meme_variable_vide():
+    # Le workflow passe SKIP_CODES vide quand la variable GitHub n'existe pas
+    agenda = Agenda({})
+    passage(cfg(SKIP_CODES=""), Connecteur([cc(MARDI, "R"), cc(LUNDI + timedelta(days=2), "RF")]),
+            agenda, Messagerie(), LUNDI)
+    assert agenda.appliques is None
