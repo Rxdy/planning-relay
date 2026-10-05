@@ -7,5 +7,7 @@ COPY src ./src
 RUN pip install . && useradd --create-home relay && mkdir /data && chown relay /data
 USER relay
 
+ENV TZ=Europe/Paris
+HEALTHCHECK --interval=5m --timeout=10s --start-period=1m CMD ["planning-relay", "sante"]
 ENTRYPOINT ["planning-relay"]
-CMD ["sync"]
+CMD ["service"]
