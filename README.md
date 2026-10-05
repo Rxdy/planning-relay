@@ -10,19 +10,19 @@ Un passage : lire la ligne de la personne suivie (les collègues sont écartés 
 
 ## Exécution sur rp-meliodas
 
-Comme les autres services du Pi : un dossier `~/planning-relay` avec `docker-compose.prod.yml` et un `.env` en `600`. Le minuteur systemd `planning-relay.timer` lance un passage à la minute 5 de chaque heure et tire l'image `latest` à chaque fois. Les fichiers sont dans [deploy/](deploy/).
+Comme les autres services du Pi : un dossier `~/planning-relay` avec `docker-compose.prod.yml` et un `.env` en `600`. Le conteneur `planning-relay` tourne en permanence et fait un passage à chaque heure pile (hh:00, heure de Paris), jamais au démarrage. Watchtower le met à jour à chaque nouvelle image `latest`, et metryx l'affiche avec son état de santé. Les fichiers sont dans [deploy/](deploy/).
 
 ```sh
 # sur le Pi
 mkdir -p ~/planning-relay && cd ~/planning-relay
 # copier deploy/docker-compose.prod.yml et deploy/.env.example (→ .env, à remplir)
 chmod 600 .env
-sudo cp planning-relay.service planning-relay.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now planning-relay.timer
-journalctl -u planning-relay -n 50     # journal des passages
+docker compose -f docker-compose.prod.yml up -d
+docker logs -f planning-relay          # journal des passages
+docker exec planning-relay planning-relay sync   # passage immédiat, si besoin
 ```
 
-Au 3e échec d'affilée, un mail d'alerte part, une seule fois par série. Le compteur vit dans le volume `planning-relay-data`.
+Le conteneur passe en `unhealthy` après 3 échecs d'affilée, ou si aucun passage n'a eu lieu depuis 2 h 30. Au 3e échec, un mail d'alerte part, une seule fois par série. L'état vit dans le volume `planning-relay-data`.
 
 | Variable | Rôle |
 |---|---|
