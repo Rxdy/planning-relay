@@ -36,6 +36,9 @@ class Agenda:
     def appliquer(self, changements, aujourdhui=None):
         self.appliques = changements
 
+    def rafraichir_titres(self):
+        return 0
+
 
 class Messagerie:
     def __init__(self):
@@ -89,7 +92,7 @@ def test_dry_run_ne_touche_a_rien():
 def test_aller_retour_proprietes_agenda():
     c = cc(MARDI, "NIGHT", "22:45 - 07:00 (7h45), pause 30 min")
     ev = evenement(c, cfg())
-    assert ev["summary"] == "Charlène — NIGHT"
+    assert ev["summary"] == "Charlène — Nuit"
     assert ev["end"]["dateTime"] == "2026-10-07T07:00:00"
     assert creneau_depuis_proprietes(ev["extendedProperties"]["private"]) == c
 

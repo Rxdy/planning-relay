@@ -67,6 +67,13 @@ class FauxEvents:
             return self.stock[eventId]
         return _Requete(faire)
 
+    def patch(self, calendarId, eventId, body):
+        self.appels.append(("patch", calendarId, eventId))
+        def faire():
+            self.stock[eventId] = {**self.stock[eventId], **body}
+            return self.stock[eventId]
+        return _Requete(faire)
+
     def delete(self, calendarId, eventId):
         self.appels.append(("delete", calendarId, eventId))
         return _Requete(lambda: self.stock.pop(eventId))
@@ -110,11 +117,11 @@ def test_publication_cree_un_evenement_par_jour(agenda):
 
 def test_evenement_horaire_titre_couleur_description():
     ev = evenement(soir(date(2026, 10, 7)), CFG)
-    assert ev["summary"] == "Charlène — SOIR"
+    assert ev["summary"] == "Charlène — Soir"
     assert ev["colorId"] == "6"
     assert ev["start"] == {"dateTime": "2026-10-07T14:45:00", "timeZone": "Europe/Paris"}
     assert ev["end"] == {"dateTime": "2026-10-07T22:45:00", "timeZone": "Europe/Paris"}
-    assert ev["description"].startswith("RECEP SOIR\nDurée : 7h30\nPause : 30 min")
+    assert ev["description"].startswith("Durée : 7h30\nPause : 30 min\n\nSynchronisé")
     assert ev["reminders"] == {"useDefault": False}
 
 
@@ -157,8 +164,8 @@ def test_modification_met_a_jour_le_meme_evenement_et_le_marque(agenda):
     assert [(c.type, c.jour) for c in chs] == [("modif", date(2026, 10, 7))]
     assert len(stock(agenda)) == 6
     ev = stock(agenda)[id_mer]
-    assert ev["summary"] == "Charlène — SOIR (modifié)"
-    assert ev["description"].startswith("Modifié le 06/10 — avant : NIGHT 22:45–07:00\nRECEP SOIR")
+    assert ev["summary"] == "Charlène — Soir (modifié)"
+    assert ev["description"].startswith("Modifié le 06/10 — avant : Nuit 22:45–07:00\nDurée : 7h30")
     assert ev["end"]["dateTime"] == "2026-10-07T22:45:00"
     assert ev["colorId"] == "6"
 
@@ -187,7 +194,7 @@ def test_suppression_garde_l_evenement_grise_et_marque(agenda):
     chs = synchroniser(agenda, SANS_MER)
     assert [(c.type, c.jour) for c in chs] == [("suppr", date(2026, 10, 7))]
     ev = evenement_du(agenda, "2026-10-07")
-    assert ev["summary"] == "Charlène — NIGHT (supprimé)"
+    assert ev["summary"] == "Charlène — Nuit (supprimé)"
     assert ev["description"].startswith("Supprimé du planning le 06/10.")
     assert ev["colorId"] == "8" and ev["transparency"] == "transparent"
     assert not any(a[0] == "delete" for a in agenda.service.events().appels)
@@ -208,8 +215,8 @@ def test_creneau_qui_revient_reutilise_le_marqueur(agenda):
     assert [c.type for c in chs] == ["ajout"]
     ev = evenement_du(agenda, "2026-10-07")
     assert ev["id"] == id_mer and len(stock(agenda)) == 6
-    assert ev["summary"] == "Charlène — SOIR (modifié)"
-    assert "avant : NIGHT 22:45–07:00" in ev["description"]
+    assert ev["summary"] == "Charlène — Soir (modifié)"
+    assert "avant : Nuit 22:45–07:00" in ev["description"]
     assert "transparency" not in ev
 
 
@@ -265,3 +272,29 @@ def test_pagination(agenda):
 def test_filtre_sur_la_propriete_privee(agenda):
     agenda.lister(DEBUT, FIN)
     assert agenda.service.events().appels[0] == ("list", "affichage@group", f"{PROP}=charlene")
+
+
+# --- Titres écrits par une version précédente ------------------------------
+
+def test_anciens_titres_remis_au_format_poste_sans_toucher_au_reste(agenda):
+    synchroniser(agenda, SEMAINE)
+    for ev in stock(agenda).values():  # comme écrit par la v1 : code Silae dans le titre
+        props = ev["extendedProperties"]["private"]
+        ev["summary"] = f"Charlène — {props['code']}" + (" (modifié)" if props["etat"] == "modifie" else "")
+    avant = {i: {k: v for k, v in e.items() if k != "summary"} for i, e in stock(agenda).items()}
+
+    agenda.lister(DEBUT, FIN)
+    assert agenda.rafraichir_titres() == 6
+    titres = sorted(e["summary"] for e in stock(agenda).values())
+    # SEMAINE contient aussi R et RF : ce test passe sous le filtre SKIP_CODES
+    assert titres == sorted(["Charlène — Nuit", "Charlène — Nuit", "Charlène — Repos",
+                             "Charlène — Récup Férié", "Charlène — Repos", "Charlène — Matin"])
+    assert {i: {k: v for k, v in e.items() if k != "summary"} for i, e in stock(agenda).items()} == avant
+    assert agenda.rafraichir_titres() == 0
+
+
+def test_titres_a_jour_rien_a_rafraichir(agenda):
+    synchroniser(agenda, SEMAINE)
+    agenda.lister(DEBUT, FIN)
+    assert agenda.rafraichir_titres() == 0
+    assert not any(a[0] == "patch" for a in agenda.service.events().appels)
