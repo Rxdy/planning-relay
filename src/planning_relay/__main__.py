@@ -52,28 +52,42 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def synchro(cfg: Config) -> int:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
     from .agenda import Agenda
-    from .alerte import Compteur, doit_alerter
+    from .alerte import SEUIL, Compteur, doit_alerter, mail_alerte, mail_retabli
     from .connecteurs import creer_connecteur
+    from .diagnostic import diagnostiquer
     from .mail import Messagerie
     from .synchro import passage
 
+    maintenant = datetime.now(ZoneInfo(cfg.fuseau))
     compteur = Compteur(cfg.dossier_etat)
     try:
         passage(cfg, creer_connecteur(cfg), Agenda(cfg), Messagerie(cfg))
     except Exception as e:
-        n = compteur.echec()
-        # Ne logguer que le type : un message d'erreur peut contenir des données.
-        log.error("Passage en échec (%s), %d échec(s) d'affilée", type(e).__name__, n)
+        n = compteur.echec(maintenant)
+        diag = diagnostiquer(e)
+        # Ne logguer que le diagnostic : le texte brut d'une erreur peut contenir des données.
+        log.error("Passage en échec (%s : %s), %d échec(s) d'affilée", diag.etape, diag.detail, n)
         if doit_alerter(n):
-            Messagerie(cfg).envoyer(
-                f"Planning de {cfg.personne} : synchro en panne",
-                f"La synchro du planning a échoué {n} fois de suite (dernière erreur : {type(e).__name__}).\n\n"
-                "Causes probables : identifiants expirés, site modifié, agenda inaccessible.\n"
-                "Journal sur le Pi : journalctl -u planning-relay -n 100",
-            )
-            log.info("Alerte envoyée")
+            try:
+                objet, texte, html = mail_alerte(cfg, diag, n, compteur.depuis())
+                Messagerie(cfg).envoyer(objet, texte, html, cfg.alerte_to)
+                log.info("Alerte envoyée")
+            except Exception as e2:
+                log.error("Alerte impossible à envoyer (%s)", type(e2).__name__)
         return 1
+
+    n = compteur.lire()
+    if n >= SEUIL:
+        # Une alerte était partie : on prévient que c'est reparti.
+        try:
+            objet, texte, html = mail_retabli(cfg, n, compteur.depuis(), maintenant)
+            Messagerie(cfg).envoyer(objet, texte, html, cfg.alerte_to)
+        except Exception as e2:
+            log.error("Mail de rétablissement impossible à envoyer (%s)", type(e2).__name__)
     compteur.succes()
     return 0
 
