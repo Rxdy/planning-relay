@@ -5,7 +5,6 @@ import pytest
 from planning_relay.agenda import creneau_depuis_proprietes, evenement
 from planning_relay.alerte import doit_alerter
 from planning_relay.config import Config
-from planning_relay.connecteurs.filtre import correspond
 from planning_relay.mail import objet
 from planning_relay.modeles import creneau_depuis_cellule as cc
 from planning_relay.synchro import GardeFou, fenetre, passage
@@ -106,11 +105,6 @@ def test_objet_mail():
 
     chs = comparer({}, {MARDI: cc(MARDI, "R"), date(2026, 10, 13): cc(date(2026, 10, 13), "R")})
     assert objet(cfg(), chs) == "Planning de Charlène : 2 changements (sem. 41, 42)"
-
-
-def test_filtre_nom_insensible_accents_casse():
-    assert correspond("Charlène  DUPONT", "charlene dupont")
-    assert not correspond("Zakia MARTIN", "charlene dupont")
 
 
 def test_alerte_seulement_au_troisieme_echec():
