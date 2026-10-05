@@ -240,10 +240,11 @@ class Messagerie:
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
-    def envoyer(self, sujet: str, texte: str, html: str | None = None) -> None:
+    def envoyer(self, sujet: str, texte: str, html: str | None = None,
+                destinataires: list[str] | None = None) -> None:
         msg = EmailMessage()
         msg["From"] = self.cfg.smtp_user
-        msg["To"] = ", ".join(self.cfg.mail_to)
+        msg["To"] = ", ".join(destinataires or self.cfg.mail_to)
         msg["Subject"] = sujet
         msg.set_content(texte)
         if html:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 import time as horloge
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -16,6 +17,17 @@ log = logging.getLogger("planning_relay")
 
 class GardeFou(Exception):
     """Lecture suspecte : on s'arrête sans rien toucher dans l'agenda."""
+
+
+@contextmanager
+def etape(nom: str):
+    """Note sur l'erreur l'étape où elle s'est produite (lue par le diagnostic)."""
+    try:
+        yield
+    except Exception as e:
+        if not hasattr(e, "etape"):
+            e.etape = nom
+        raise
 
 
 def fenetre(aujourdhui: date, semaines: int) -> tuple[date, date]:
@@ -49,18 +61,23 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
 
     # Depuis lundi : les jours passés de la semaine ne sont pas comparés, mais
     # le mail montre la semaine entière.
-    lus_bruts = recuperer_avec_essais(connecteur, lundi, fin, cfg.essais, cfg.delai_essai)
+    with etape("Silae"):
+        lus_bruts = recuperer_avec_essais(connecteur, lundi, fin, cfg.essais, cfg.delai_essai)
     planning = {c.jour: c for c in lus_bruts if lundi <= c.jour <= fin and c.code not in cfg.codes_ignores}
     lus = {j: c for j, c in planning.items() if j >= debut}
-    connus = agenda.lister(debut, fin)
+    with etape("Google Agenda"):
+        connus = agenda.lister(debut, fin)
     log.info("Créneaux lus : %d ; déjà dans l'agenda : %d", len(lus), len(connus))
 
     if not lus_bruts and connus:
-        raise GardeFou("Planning vide alors que l'agenda en contient : rien n'est supprimé")
+        with etape("Silae"):
+            raise GardeFou("Planning vide alors que l'agenda en contient : rien n'est supprimé")
 
     if not cfg.dry_run:
         # Titres écrits par une version précédente : mis à jour sans mail.
-        if n := agenda.rafraichir_titres():
+        with etape("Google Agenda"):
+            n = agenda.rafraichir_titres()
+        if n:
             log.info("Titres remis au format actuel : %d", n)
 
     changements = comparer(connus, lus)
@@ -74,6 +91,8 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
 
     # Mail d'abord : si l'écriture échoue, le passage suivant renverra le mail
     # plutôt que de perdre le changement.
-    messagerie.par_semaine(planning, connus, changements, aujourdhui)
-    agenda.appliquer(changements, aujourdhui)
+    with etape("Gmail"):
+        messagerie.par_semaine(planning, connus, changements, aujourdhui)
+    with etape("Google Agenda"):
+        agenda.appliquer(changements, aujourdhui)
     return changements
