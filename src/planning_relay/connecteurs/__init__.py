@@ -7,7 +7,7 @@ from ..modeles import Creneau
 
 
 class LigneIntrouvable(Exception):
-    """La ligne de la personne suivie n'apparaît pas dans le planning lu."""
+    """Les créneaux de la personne suivie n'apparaissent pas dans le planning lu."""
 
 
 class Connecteur(Protocol):

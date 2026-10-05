@@ -19,7 +19,11 @@ class GardeFou(Exception):
 
 
 def fenetre(aujourdhui: date, semaines: int) -> tuple[date, date]:
-    """Aujourd'hui → dimanche de la dernière semaine (semaine en cours + 3 suivantes)."""
+    """Aujourd'hui → dimanche de la dernière semaine regardée.
+
+    Le planning n'est publié qu'une semaine ou deux à l'avance : la fenêtre est
+    large pour tout prendre dès publication, et les jours sans rien restent vides.
+    """
     lundi = aujourdhui - timedelta(days=aujourdhui.weekday())
     return aujourdhui, lundi + timedelta(weeks=semaines, days=-1)
 
@@ -41,9 +45,13 @@ def recuperer_avec_essais(connecteur, debut: date, fin: date, essais: int, delai
 def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None = None) -> list[Changement]:
     aujourdhui = aujourdhui or datetime.now(ZoneInfo(cfg.fuseau)).date()
     debut, fin = fenetre(aujourdhui, cfg.semaines)
+    lundi = debut - timedelta(days=debut.weekday())
 
-    lus_bruts = recuperer_avec_essais(connecteur, debut, fin, cfg.essais, cfg.delai_essai)
-    lus = {c.jour: c for c in lus_bruts if debut <= c.jour <= fin and c.code not in cfg.codes_ignores}
+    # Depuis lundi : les jours passés de la semaine ne sont pas comparés, mais
+    # le mail montre la semaine entière.
+    lus_bruts = recuperer_avec_essais(connecteur, lundi, fin, cfg.essais, cfg.delai_essai)
+    planning = {c.jour: c for c in lus_bruts if lundi <= c.jour <= fin and c.code not in cfg.codes_ignores}
+    lus = {j: c for j, c in planning.items() if j >= debut}
     connus = agenda.lister(debut, fin)
     log.info("Créneaux lus : %d ; déjà dans l'agenda : %d", len(lus), len(connus))
 
@@ -61,6 +69,6 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
 
     # Mail d'abord : si l'écriture échoue, le passage suivant renverra le mail
     # plutôt que de perdre le changement.
-    messagerie.recapitulatif(changements)
-    agenda.appliquer(changements)
+    messagerie.par_semaine(planning, connus, changements, aujourdhui)
+    agenda.appliquer(changements, aujourdhui)
     return changements

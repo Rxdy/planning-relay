@@ -1,44 +1,40 @@
 """Mail d'alerte après 3 échecs consécutifs.
 
-Il n'y a pas de fichier d'état : on demande à GitHub l'issue des passages
-précédents. Appelé par le workflow quand le passage courant a échoué.
+Le compteur vit dans un petit fichier du volume /data : il ne contient
+qu'un nombre, jamais de planning ni d'identifiant.
 """
 
 from __future__ import annotations
 
-import os
-
-import httpx
+from pathlib import Path
 
 SEUIL = 3
 
 
-def echecs_consecutifs(conclusions_precedentes: list[str]) -> int:
-    """Nombre d'échecs d'affilée, passage courant (en échec) compris."""
-    n = 1
-    for c in conclusions_precedentes:
-        if c != "failure":
-            break
-        n += 1
-    return n
+class Compteur:
+    def __init__(self, dossier: str):
+        self.fichier = Path(dossier) / "echecs"
+
+    def lire(self) -> int:
+        try:
+            return int(self.fichier.read_text().strip() or 0)
+        except (FileNotFoundError, ValueError):
+            return 0
+
+    def _ecrire(self, n: int) -> None:
+        self.fichier.parent.mkdir(parents=True, exist_ok=True)
+        self.fichier.write_text(str(n))
+
+    def echec(self) -> int:
+        n = self.lire() + 1
+        self._ecrire(n)
+        return n
+
+    def succes(self) -> None:
+        if self.lire():
+            self._ecrire(0)
 
 
-def conclusions_precedentes() -> list[str]:
-    depot = os.environ["GITHUB_REPOSITORY"]
-    run_id = int(os.environ["GITHUB_RUN_ID"])
-    workflow = os.environ["GITHUB_WORKFLOW_REF"].split("@")[0].rsplit("/", 1)[-1]
-    reponse = httpx.get(
-        f"https://api.github.com/repos/{depot}/actions/workflows/{workflow}/runs",
-        params={"status": "completed", "per_page": SEUIL + 1},
-        headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-                 "Accept": "application/vnd.github+json"},
-        timeout=30,
-    )
-    reponse.raise_for_status()
-    runs = [r for r in reponse.json()["workflow_runs"] if r["id"] != run_id]
-    return [r["conclusion"] for r in runs]
-
-
-def doit_alerter(conclusions: list[str]) -> bool:
+def doit_alerter(echecs_consecutifs: int) -> bool:
     # Une seule alerte par série d'échecs : au 3e, pas aux suivants.
-    return echecs_consecutifs(conclusions) == SEUIL
+    return echecs_consecutifs == SEUIL
