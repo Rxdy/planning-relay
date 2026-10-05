@@ -17,7 +17,7 @@ Un passage : lire la ligne de la personne suivie (les collègues sont écartés 
 | `PLATFORM_USER`, `PLATFORM_PASSWORD` | secret | Connexion à sirh.software |
 | `GOOGLE_SA_JSON` | secret | Clé du compte de service (scope `calendar.events`) |
 | `SMTP_USER`, `SMTP_PASSWORD` | secret | Expéditeur Gmail et mot de passe d'application |
-| `PERSON_MATCH` | variable | Nom affiché ou matricule de la ligne à lire |
+| `PERSON_MATCH` | variable | Matricule Silae de la personne suivie (champ `employee`) |
 | `CALENDAR_ID` | variable | Agenda de l'affichage |
 | `MAIL_TO` | variable | Destinataires, séparés par des virgules |
 | `SKIP_CODES` | variable | Codes à ne pas afficher, par exemple `R,RF` |

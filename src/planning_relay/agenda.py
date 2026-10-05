@@ -28,6 +28,7 @@ def creneau_depuis_proprietes(props: dict[str, str]) -> Creneau:
         fin=_t(props.get("fin", "")),
         duree=props.get("duree") or None,
         pause=props.get("pause") or None,
+        intitule=props.get("intitule") or None,
     )
 
 
@@ -40,8 +41,9 @@ def evenement(c: Creneau, cfg: Config) -> dict:
         "fin": c.fin.isoformat("minutes") if c.fin else "",
         "duree": c.duree or "",
         "pause": c.pause or "",
+        "intitule": c.intitule or "",
     }
-    details = [f"Durée : {c.duree}" if c.duree else "", f"Pause : {c.pause}" if c.pause else ""]
+    details = [c.intitule or "", f"Durée : {c.duree}" if c.duree else "", f"Pause : {c.pause}" if c.pause else ""]
     corps = {
         "summary": cfg.titre.format(personne=cfg.personne, code=c.code),
         "description": "\n".join(d for d in details if d) + "\n\nSynchronisé depuis Silae RH Suite.",
