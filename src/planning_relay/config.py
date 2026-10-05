@@ -37,6 +37,7 @@ class Config:
     delai_essai: int = 300
     fuseau: str = "Europe/Paris"
     dry_run: bool = False
+    dossier_etat: str = "/data"
 
     @classmethod
     def depuis_env(cls, env: dict[str, str] | None = None) -> Config:
@@ -65,4 +66,5 @@ class Config:
             essais=int(g("FETCH_ATTEMPTS", "3")),
             delai_essai=int(g("FETCH_RETRY_DELAY", "300")),
             dry_run=g("DRY_RUN").lower() in {"1", "true", "oui", "yes"},
+            dossier_etat=g("STATE_DIR", "/data"),
         )

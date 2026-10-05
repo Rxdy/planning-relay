@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from planning_relay.agenda import creneau_depuis_proprietes, evenement
-from planning_relay.alerte import doit_alerter
+from planning_relay.alerte import Compteur, doit_alerter
 from planning_relay.config import Config
 from planning_relay.modeles import creneau_depuis_cellule as cc
 from planning_relay.synchro import GardeFou, fenetre, passage
@@ -100,10 +100,36 @@ def test_evenement_journee_entiere():
 
 
 def test_alerte_seulement_au_troisieme_echec():
-    assert not doit_alerter(["success"])
-    assert not doit_alerter(["failure", "success"])
-    assert doit_alerter(["failure", "failure", "success"])
-    assert not doit_alerter(["failure", "failure", "failure"])
+    assert [doit_alerter(n) for n in range(1, 6)] == [False, False, True, False, False]
+
+
+def test_compteur_echecs(tmp_path):
+    c = Compteur(str(tmp_path / "etat"))
+    assert c.lire() == 0
+    assert [c.echec(), c.echec()] == [1, 2]
+    c.succes()
+    assert c.lire() == 0 and c.echec() == 1
+
+
+def test_sync_compte_les_echecs_et_alerte_au_troisieme(tmp_path, monkeypatch):
+    import planning_relay.__main__ as m
+    import planning_relay.synchro as s
+    import planning_relay.agenda as a
+    import planning_relay.connecteurs as co
+    import planning_relay.mail as ml
+
+    envois = []
+    monkeypatch.setattr(co, "creer_connecteur", lambda cfg: None)
+    monkeypatch.setattr(a, "Agenda", lambda cfg: None)
+    monkeypatch.setattr(ml.Messagerie, "envoyer", lambda self, *args: envois.append(args[0]))
+    monkeypatch.setattr(s, "passage", lambda *args: (_ for _ in ()).throw(RuntimeError("site modifié")))
+    config = cfg(STATE_DIR=str(tmp_path))
+    assert [m.synchro(config) for _ in range(4)] == [1, 1, 1, 1]
+    assert envois == ["Planning de Charlène : synchro en panne"]
+
+    monkeypatch.setattr(s, "passage", lambda *args: [])
+    assert m.synchro(config) == 0
+    assert Compteur(str(tmp_path)).lire() == 0
 
 
 def test_repos_ignores_par_defaut_meme_variable_vide():
