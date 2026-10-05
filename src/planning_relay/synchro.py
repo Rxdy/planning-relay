@@ -70,5 +70,5 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
     # Mail d'abord : si l'écriture échoue, le passage suivant renverra le mail
     # plutôt que de perdre le changement.
     messagerie.par_semaine(planning, connus, changements, aujourdhui)
-    agenda.appliquer(changements)
+    agenda.appliquer(changements, aujourdhui)
     return changements

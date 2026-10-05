@@ -33,7 +33,7 @@ class Agenda:
     def lister(self, debut, fin):
         return {j: c for j, c in self.connus.items() if debut <= j <= fin}
 
-    def appliquer(self, changements):
+    def appliquer(self, changements, aujourdhui=None):
         self.appliques = changements
 
 

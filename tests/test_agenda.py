@@ -13,6 +13,7 @@ from planning_relay.config import Config
 CFG = Config.depuis_env({"PERSON_NAME": "Charlène", "CALENDAR_ID": "affichage@group", "SYNC_KEY": "charlene",
                          "EVENT_COLOR_ID": "6"})
 DEBUT, FIN = date(2026, 10, 6), date(2026, 11, 29)
+LE = date(2026, 10, 6)  # jour du passage, écrit dans la description
 
 
 class _Requete:
@@ -92,7 +93,7 @@ def synchroniser(agenda, lus):
     """Ce que fait un passage côté agenda : lister, comparer, appliquer."""
     lus = {j: c for j, c in lus.items() if DEBUT <= j <= FIN}
     changements = comparer(agenda.lister(DEBUT, FIN), lus)
-    agenda.appliquer(changements)
+    agenda.appliquer(changements, LE)
     return changements
 
 
@@ -143,32 +144,81 @@ def test_deuxieme_passage_identique_ne_fait_rien(agenda):
 
 # --- Modification ----------------------------------------------------------
 
-def test_modification_met_a_jour_le_meme_evenement(agenda):
+def evenement_du(agenda, jour):
+    [ev] = [e for e in stock(agenda).values() if e["extendedProperties"]["private"]["jour"] == jour]
+    return ev
+
+
+def test_modification_met_a_jour_le_meme_evenement_et_le_marque(agenda):
     synchroniser(agenda, SEMAINE)
-    id_mer = next(i for i, e in stock(agenda).items() if e["extendedProperties"]["private"]["jour"] == "2026-10-07")
+    id_mer = evenement_du(agenda, "2026-10-07")["id"]
     nouveau = {**SEMAINE, date(2026, 10, 7): soir(date(2026, 10, 7))}
     chs = synchroniser(agenda, nouveau)
     assert [(c.type, c.jour) for c in chs] == [("modif", date(2026, 10, 7))]
     assert len(stock(agenda)) == 6
-    assert stock(agenda)[id_mer]["summary"] == "Charlène — SOIR"
-    assert stock(agenda)[id_mer]["end"]["dateTime"] == "2026-10-07T22:45:00"
+    ev = stock(agenda)[id_mer]
+    assert ev["summary"] == "Charlène — SOIR (modifié)"
+    assert ev["description"].startswith("Modifié le 06/10 — avant : NIGHT 22:45–07:00\nRECEP SOIR")
+    assert ev["end"]["dateTime"] == "2026-10-07T22:45:00"
+    assert ev["colorId"] == "6"
+
+
+def test_creneau_modifie_reste_connu_avec_son_nouveau_contenu(agenda):
+    synchroniser(agenda, SEMAINE)
+    nouveau = {**SEMAINE, date(2026, 10, 7): soir(date(2026, 10, 7))}
+    synchroniser(agenda, nouveau)
+    assert synchroniser(agenda, nouveau) == []
 
 
 def test_repos_devient_horaire(agenda):
     synchroniser(agenda, SEMAINE)
     synchroniser(agenda, {**SEMAINE, date(2026, 10, 8): matin(date(2026, 10, 8))})
-    ev = next(e for e in stock(agenda).values() if e["extendedProperties"]["private"]["jour"] == "2026-10-08")
+    ev = evenement_du(agenda, "2026-10-08")
     assert "date" not in ev["start"] and ev["start"]["dateTime"] == "2026-10-08T07:00:00"
 
 
 # --- Suppression -----------------------------------------------------------
 
-def test_suppression_retire_l_evenement(agenda):
+SANS_MER = {j: c for j, c in SEMAINE.items() if j != date(2026, 10, 7)}
+
+
+def test_suppression_garde_l_evenement_grise_et_marque(agenda):
     synchroniser(agenda, SEMAINE)
-    sans_mer = {j: c for j, c in SEMAINE.items() if j != date(2026, 10, 7)}
-    chs = synchroniser(agenda, sans_mer)
+    chs = synchroniser(agenda, SANS_MER)
     assert [(c.type, c.jour) for c in chs] == [("suppr", date(2026, 10, 7))]
-    assert "2026-10-07" not in {e["extendedProperties"]["private"]["jour"] for e in stock(agenda).values()}
+    ev = evenement_du(agenda, "2026-10-07")
+    assert ev["summary"] == "Charlène — NIGHT (supprimé)"
+    assert ev["description"].startswith("Supprimé du planning le 06/10.")
+    assert ev["colorId"] == "8" and ev["transparency"] == "transparent"
+    assert not any(a[0] == "delete" for a in agenda.service.events().appels)
+
+
+def test_marqueur_supprime_n_est_pas_un_creneau_connu(agenda):
+    synchroniser(agenda, SEMAINE)
+    synchroniser(agenda, SANS_MER)
+    assert date(2026, 10, 7) not in agenda.lister(DEBUT, FIN)
+    assert synchroniser(agenda, SANS_MER) == []  # pas de nouvelle suppression à chaque passage
+
+
+def test_creneau_qui_revient_reutilise_le_marqueur(agenda):
+    synchroniser(agenda, SEMAINE)
+    id_mer = evenement_du(agenda, "2026-10-07")["id"]
+    synchroniser(agenda, SANS_MER)
+    chs = synchroniser(agenda, {**SANS_MER, date(2026, 10, 7): soir(date(2026, 10, 7))})
+    assert [c.type for c in chs] == ["ajout"]
+    ev = evenement_du(agenda, "2026-10-07")
+    assert ev["id"] == id_mer and len(stock(agenda)) == 6
+    assert ev["summary"] == "Charlène — SOIR (modifié)"
+    assert "avant : NIGHT 22:45–07:00" in ev["description"]
+    assert "transparency" not in ev
+
+
+def test_double_marqueur_retire(agenda):
+    c = night(date(2026, 10, 7))
+    for id_ in ("a", "b"):
+        agenda.service.events().stock[id_] = {**evenement(c, CFG, "supprime"), "id": id_}
+    agenda.lister(DEBUT, FIN)
+    assert len(stock(agenda)) == 1
 
 
 def test_evenement_manuel_jamais_touche(agenda):
@@ -176,8 +226,9 @@ def test_evenement_manuel_jamais_touche(agenda):
     manuel = {"id": "perso", "summary": "Anniversaire", "start": {"date": "2026-10-07"}, "end": {"date": "2026-10-08"}}
     events.stock["perso"] = manuel
     synchroniser(agenda, SEMAINE)
+    synchroniser(agenda, {**SEMAINE, date(2026, 10, 7): soir(date(2026, 10, 7))})
     synchroniser(agenda, {})  # tout disparaît côté plateforme
-    assert events.stock == {"perso": manuel}
+    assert events.stock["perso"] == manuel
     assert all(a[2] != "perso" for a in events.appels if a[0] in ("update", "delete"))
 
 
