@@ -237,3 +237,22 @@ def test_legende_postes_de_la_semaine_et_reperes():
 def test_legende_publiee_sans_reperes_de_changement():
     texte, _ = lire_html(un_mail("publiee"))
     assert "jour qui a changé" not in texte
+
+
+@pytest.mark.parametrize("horaires, attendu", [
+    ("07:00 - 15:45", "Matin"),
+    ("06:00 - 14:00", "Matin"),
+    ("08:00 - 16:30", "Matin"),
+    ("14:45 - 22:45", "Soir"),
+    ("16:00 - 23:30", "Soir"),
+    ("13:00 - 21:00", "Soir"),
+    ("22:45 - 07:00", "Nuit"),
+    ("21:30 - 05:30", "Nuit"),
+    ("23:30 - 07:30", "Nuit"),
+    ("00:00 - 07:00", "Nuit"),
+])
+def test_poste_le_plus_proche_quand_les_horaires_varient(horaires, attendu):
+    from planning_relay.mail import poste
+    from planning_relay.modeles import creneau_depuis_cellule
+
+    assert poste(creneau_depuis_cellule(date(2026, 10, 7), "X", horaires)) == attendu

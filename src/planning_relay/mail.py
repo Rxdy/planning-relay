@@ -115,7 +115,7 @@ def texte(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Cha
         if j < aujourdhui:
             ligne += "   [passé]"
         lignes.append(ligne)
-    lignes += ["", "Postes : Matin (début avant 12h) · Soir (12h–20h) · Nuit (après 20h)"]
+    lignes += ["", "Postes : Matin (≈ 7h–15h) · Soir (≈ 15h–22h45) · Nuit (≈ 22h45–7h)"]
     if not publiee:
         lignes.append("* = jour qui a changé")
     return "\n".join(lignes)
@@ -123,16 +123,35 @@ def texte(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Cha
 
 COULEURS = {"ajout": "#1a7f37", "modif": "#a66b00", "suppr": "#b42318"}
 
-# Postes classés par heure de début, pour couvrir aussi les codes inconnus.
 # Pas les couleurs de Silae : la nuit y est rouge, comme « Annulé » ici.
 POSTES = {"Matin": "#2e9e4f", "Soir": "#ef7d1a", "Nuit": "#3b4cc0", "Autre": "#8a8a8a"}
+
+# Les 3 postes du service, en minutes depuis minuit. Les horaires réels varient
+# d'une heure ou deux : un créneau prend le poste avec lequel il se chevauche le plus.
+REFERENCES = {"Matin": (7 * 60, 15 * 60), "Soir": (15 * 60, 22 * 60 + 45), "Nuit": (22 * 60 + 45, 31 * 60)}
+
+
+def _minutes(c: Creneau) -> tuple[int, int]:
+    debut = c.debut.hour * 60 + c.debut.minute
+    fin = c.fin.hour * 60 + c.fin.minute
+    return debut, fin + 1440 if c.fin_le_lendemain else fin
+
+
+def _chevauchement(a: tuple[int, int], b: tuple[int, int]) -> int:
+    # Décalages d'un jour : une nuit 23:00–07:00 recoupe aussi la référence de la veille.
+    return max(max(0, min(a[1], b[1] + d) - max(a[0], b[0] + d)) for d in (-1440, 0, 1440))
+
+
+def _ecart_debut(a: int, b: int) -> int:
+    ecart = abs(a - b) % 1440
+    return min(ecart, 1440 - ecart)
 
 
 def poste(c: Creneau) -> str:
     if c.journee_entiere:
         return "Autre"
-    h = c.debut.hour
-    return "Matin" if 4 <= h < 12 else "Soir" if 12 <= h < 20 else "Nuit"
+    m = _minutes(c)
+    return max(REFERENCES, key=lambda p: (_chevauchement(m, REFERENCES[p]), -_ecart_debut(m[0], REFERENCES[p][0])))
 
 
 def _pastille(couleur: str) -> str:
