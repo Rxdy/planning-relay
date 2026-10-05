@@ -1,17 +1,22 @@
-# Sur rp-meliodas, dans ~/planning-relay. Lancé une fois par heure par
-# planning-relay.timer (pas de conteneur permanent, donc pas de Watchtower :
-# l'image latest est tirée à chaque passage).
+# Sur rp-meliodas, dans ~/planning-relay. Conteneur permanent comme les autres
+# services du Pi : un passage à chaque heure pile, mis à jour par Watchtower,
+# visible dans metryx (healthy / unhealthy).
 services:
   relay:
     image: ghcr.io/rxdy/planning-relay:latest
     container_name: planning-relay
-    pull_policy: always
-    restart: "no"
+    restart: unless-stopped
     mem_limit: 128m
     env_file: .env
-    command: ["sync"]
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     volumes:
       - planning-relay-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
 
 volumes:
   planning-relay-data: {}
