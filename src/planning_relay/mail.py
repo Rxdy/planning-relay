@@ -115,12 +115,54 @@ def texte(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Cha
         if j < aujourdhui:
             ligne += "   [passé]"
         lignes.append(ligne)
+    lignes += ["", "Postes : Matin (début avant 12h) · Soir (12h–20h) · Nuit (après 20h)"]
     if not publiee:
-        lignes += ["", "* = jour qui a changé"]
+        lignes.append("* = jour qui a changé")
     return "\n".join(lignes)
 
 
 COULEURS = {"ajout": "#1a7f37", "modif": "#a66b00", "suppr": "#b42318"}
+
+# Postes classés par heure de début, pour couvrir aussi les codes inconnus.
+# Pas les couleurs de Silae : la nuit y est rouge, comme « Annulé » ici.
+POSTES = {"Matin": "#2e9e4f", "Soir": "#ef7d1a", "Nuit": "#3b4cc0", "Autre": "#8a8a8a"}
+
+
+def poste(c: Creneau) -> str:
+    if c.journee_entiere:
+        return "Autre"
+    h = c.debut.hour
+    return "Matin" if 4 <= h < 12 else "Soir" if 12 <= h < 20 else "Nuit"
+
+
+def _pastille(couleur: str) -> str:
+    return (f"<span style='display:inline-block;width:10px;height:10px;border-radius:2px;"
+            f"background:{couleur};margin-right:6px;vertical-align:baseline'></span>")
+
+
+def legende(planning: dict[date, Creneau], lundi: date, aujourdhui: date, publiee: bool) -> str:
+    semaine = [planning[j] for j in sorted(planning) if lundi <= j <= lundi + timedelta(days=6)]
+    codes: dict[str, list[str]] = {}
+    for c in semaine:
+        codes.setdefault(poste(c), [])
+        if c.code not in codes[poste(c)]:
+            codes[poste(c)].append(c.code)
+    postes = "".join(
+        f"<span style='margin-right:14px;white-space:nowrap'>{_pastille(POSTES[p])}{p} "
+        f"<span style='color:#888'>({escape(', '.join(cs))})</span></span>"
+        for p, cs in sorted(codes.items(), key=lambda kv: list(POSTES).index(kv[0]))
+    )
+    reperes = []
+    if not publiee:
+        reperes.append("<span style='background:#fff4cc;padding:0 4px'>surligné</span> jour qui a changé")
+        reperes.append("<s>barré</s> ancien créneau")
+    if lundi < aujourdhui:
+        reperes.append("<span style='color:#999'>gris</span> jour passé")
+    ligne_reperes = f"<div style='margin-top:6px'>{' · '.join(reperes)}</div>" if reperes else ""
+    return (
+        "<div style='font-size:13px;color:#555;margin:12px 0 0;line-height:1.6'>"
+        f"<div>{postes}</div>{ligne_reperes}</div>"
+    )
 
 
 def html(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Changement],
@@ -149,7 +191,8 @@ def html(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Chan
         surligne = ch is not None and not publiee
         fond = "#fff4cc" if surligne else "transparent"
         couleur = "#999" if j < aujourdhui else "#222"
-        creneau = f"<strong>{escape(_creneau(c))}</strong>" if c else "<span style='color:#999'>Repos</span>"
+        creneau = (f"{_pastille(POSTES[poste(c)])}<strong>{escape(_creneau(c))}</strong>"
+                   if c else "<span style='color:#999;margin-left:16px'>Repos</span>")
         if c and c.intitule:
             creneau += f"<br><span style='color:#666;font-size:13px'>{escape(c.intitule)}</span>"
         if surligne and ch.avant:
@@ -173,7 +216,9 @@ def html(cfg: Config, lundi: date, planning: dict[date, Creneau], chs: list[Chan
         + resume
         + "<table style='border-collapse:collapse;border:1px solid #e5e5e5;width:100%'>"
         + "".join(lignes)
-        + "</table></div>"
+        + "</table>"
+        + legende(planning, lundi, aujourdhui, publiee)
+        + "</div>"
     )
 
 

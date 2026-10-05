@@ -172,13 +172,13 @@ def lire_html(m):
 def test_html_bloc_changement_et_ancien_barre():
     texte, barre = lire_html(un_mail("changement-poste"))
     assert "CE QUI CHANGE" in texte and "Poste : NIGHT → SOIR (Semaine → RECEP SOIR)" in texte
-    assert barre == ["NIGHT 22:45–07:00"]
+    assert [b for b in barre if b != "barré"] == ["NIGHT 22:45–07:00"]  # « barré » : la légende
     assert texte.count("Modifié") == 2  # résumé + ligne du tableau
 
 
 def test_html_une_seule_ligne_surlignee_par_jour_change():
     m = un_mail("plusieurs-changements")
-    assert m.html.count("background:#fff4cc") == 3
+    assert m.html.count("<tr style='background:#fff4cc") == 3
 
 
 @pytest.mark.parametrize("nom", list(SC))
@@ -215,3 +215,25 @@ def test_repos_jamais_reportes_dans_le_planning():
     m = un_mail("publiee")
     assert "jeu. 08/10   Repos" in m.texte and "ven. 09/10   Repos" in m.texte
     assert " R " not in m.texte and "RF" not in m.texte
+
+
+def test_poste_par_heure_de_debut():
+    from planning_relay.apercu import matin, night, soir
+    from planning_relay.mail import poste
+
+    j = date(2026, 10, 7)
+    assert [poste(matin(j)), poste(soir(j)), poste(night(j))] == ["Matin", "Soir", "Nuit"]
+
+
+def test_legende_postes_de_la_semaine_et_reperes():
+    m = un_mail("changement-poste")
+    texte, _ = lire_html(m)
+    assert "Matin" in texte and "(07H)" in texte and "Soir" in texte and "Nuit" in texte
+    assert "jour qui a changé" in texte and "ancien créneau" in texte and "jour passé" in texte
+    assert "#3b4cc0" in m.html and "#ef7d1a" in m.html and "#2e9e4f" in m.html
+    assert "Postes : Matin" in m.texte
+
+
+def test_legende_publiee_sans_reperes_de_changement():
+    texte, _ = lire_html(un_mail("publiee"))
+    assert "jour qui a changé" not in texte
