@@ -71,6 +71,34 @@ def creneau_depuis_cellule(jour: date, code: str, texte: str = "") -> Creneau:
     )
 
 
+# Les 3 postes du service, en minutes depuis minuit. Les horaires réels varient
+# d'une heure ou deux : un créneau prend le poste avec lequel il se chevauche le plus.
+REFERENCES = {"Matin": (7 * 60, 15 * 60), "Soir": (15 * 60, 22 * 60 + 45), "Nuit": (22 * 60 + 45, 31 * 60)}
+
+
+def _minutes(c: Creneau) -> tuple[int, int]:
+    debut = c.debut.hour * 60 + c.debut.minute
+    fin = c.fin.hour * 60 + c.fin.minute
+    return debut, fin + 1440 if c.fin_le_lendemain else fin
+
+
+def _chevauchement(a: tuple[int, int], b: tuple[int, int]) -> int:
+    # Décalages d'un jour : une nuit 23:00–07:00 recoupe aussi la référence de la veille.
+    return max(max(0, min(a[1], b[1] + d) - max(a[0], b[0] + d)) for d in (-1440, 0, 1440))
+
+
+def _ecart_debut(a: int, b: int) -> int:
+    ecart = abs(a - b) % 1440
+    return min(ecart, 1440 - ecart)
+
+
+def poste(c: Creneau) -> str:
+    if c.journee_entiere:
+        return "Autre"
+    m = _minutes(c)
+    return max(REFERENCES, key=lambda p: (_chevauchement(m, REFERENCES[p]), -_ecart_debut(m[0], REFERENCES[p][0])))
+
+
 @dataclass(frozen=True)
 class Changement:
     type: Literal["ajout", "modif", "suppr"]

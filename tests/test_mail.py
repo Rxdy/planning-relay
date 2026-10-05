@@ -85,8 +85,8 @@ def test_semaine_publiee_sans_bloc_changement_ni_marque():
 
 def test_jours_passes_marques_et_grises():
     m = un_mail("changement-poste")
-    assert "lun. 05/10   SOIR 14:45–22:45   RECEP SOIR   [passé]" in m.texte
-    assert "mar. 06/10" in m.texte and "mar. 06/10   NIGHT 22:45–07:00  Semaine   [passé]" not in m.texte
+    assert "lun. 05/10   14:45–22:45   Soir   [passé]" in m.texte
+    assert "mar. 06/10   22:45–07:00   Nuit" in m.texte and "mar. 06/10   22:45–07:00   Nuit   [passé]" not in m.texte
     assert "color:#999" in m.html
 
 
@@ -100,17 +100,17 @@ def test_changement_de_poste_detaille():
     m = un_mail("changement-poste")
     assert section(m.texte, "CE QUI CHANGE") == [
         "- mer. 07/10 · Modifié",
-        "    Poste : NIGHT → SOIR (Semaine → RECEP SOIR)",
+        "    Poste : Nuit → Soir",
         "    Horaires : 22:45–07:00 (lendemain) → 14:45–22:45",
         "    Durée : 7h45 → 7h30",
     ]
-    assert "* mer. 07/10   SOIR 14:45–22:45   RECEP SOIR" in m.texte
+    assert "* mer. 07/10   14:45–22:45   Soir" in m.texte
 
 
 def test_repos_devient_travail():
     assert section(un_mail("repos-devient-travail").texte, "CE QUI CHANGE") == [
         "- jeu. 08/10 · Ajouté",
-        "    Repos → 07H 07:00–15:45 (MATIN)",
+        "    Repos → Matin 07:00–15:45",
     ]
 
 
@@ -124,14 +124,14 @@ def test_horaires_seuls_pas_de_ligne_poste():
 def test_suppression():
     assert section(un_mail("suppression").texte, "CE QUI CHANGE") == [
         "- mer. 07/10 · Annulé",
-        "    NIGHT 22:45–07:00 (Semaine) → Repos",
+        "    Nuit 22:45–07:00 → Repos",
     ]
 
 
 def test_ajout_dans_semaine_connue():
     assert section(un_mail("ajout-semaine-connue").texte, "CE QUI CHANGE") == [
         "- mer. 07/10 · Ajouté",
-        "    Repos → SOIR 14:45–22:45 (RECEP SOIR)",
+        "    Repos → Soir 14:45–22:45",
     ]
 
 
@@ -171,8 +171,8 @@ def lire_html(m):
 
 def test_html_bloc_changement_et_ancien_barre():
     texte, barre = lire_html(un_mail("changement-poste"))
-    assert "CE QUI CHANGE" in texte and "Poste : NIGHT → SOIR (Semaine → RECEP SOIR)" in texte
-    assert [b for b in barre if b != "barré"] == ["NIGHT 22:45–07:00"]  # « barré » : la légende
+    assert "CE QUI CHANGE" in texte and "Poste : Nuit → Soir" in texte
+    assert [b for b in barre if b != "barré"] == ["Nuit 22:45–07:00"]  # « barré » : la légende
     assert texte.count("Modifié") == 2  # résumé + ligne du tableau
 
 
@@ -228,10 +228,10 @@ def test_poste_par_heure_de_debut():
 def test_legende_postes_de_la_semaine_et_reperes():
     m = un_mail("changement-poste")
     texte, _ = lire_html(m)
-    assert "Matin" in texte and "(07H)" in texte and "Soir" in texte and "Nuit" in texte
+    assert "Matin" in texte and "Soir" in texte and "Nuit" in texte
     assert "jour qui a changé" in texte and "ancien créneau" in texte and "jour passé" in texte
     assert "#3b4cc0" in m.html and "#ef7d1a" in m.html and "#2e9e4f" in m.html
-    assert "Postes : Matin" in m.texte
+    assert "(07H)" not in texte and "(SOIR)" not in texte
 
 
 def test_legende_publiee_sans_reperes_de_changement():
@@ -256,3 +256,17 @@ def test_poste_le_plus_proche_quand_les_horaires_varient(horaires, attendu):
     from planning_relay.modeles import creneau_depuis_cellule
 
     assert poste(creneau_depuis_cellule(date(2026, 10, 7), "X", horaires)) == attendu
+
+
+@pytest.mark.parametrize("nom", list(SC))
+def test_ni_codes_silae_ni_intitules_dans_le_mail(nom):
+    for m in SC[nom].mails(CFG):
+        texte_html, _ = lire_html(m)
+        for contenu in (m.texte, texte_html):
+            for interdit in ("NIGHT", "SOIR", "07H", "RECEP", "Semaine ", "MATIN"):
+                assert interdit not in contenu.replace("Semaine 4", ""), (interdit, contenu)
+
+
+def test_ligne_carre_horaires_puis_poste_dessous():
+    m = un_mail("publiee")
+    assert "<strong>22:45–07:00</strong><br><span style='color:#666;font-size:13px;margin-left:16px'>Nuit</span>" in m.html

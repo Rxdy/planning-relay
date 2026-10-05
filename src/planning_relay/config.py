@@ -53,7 +53,7 @@ class Config:
             cle_synchro=g("SYNC_KEY", "charlene"),
             google_sa_json=g("GOOGLE_SA_JSON"),
             calendar_id=g("CALENDAR_ID"),
-            titre=g("EVENT_TITLE", "{personne} — {code}"),
+            titre=g("EVENT_TITLE", "{personne} — {poste}"),
             couleur=g("EVENT_COLOR_ID") or None,
             # Repos et récup férié ne vont pas dans l'agenda : un jour vide est un repos.
             codes_ignores=[c.upper() for c in _liste(g("SKIP_CODES") or "R,RF")],
