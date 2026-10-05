@@ -31,6 +31,7 @@ class Config:
     smtp_user: str = ""
     smtp_password: str = ""
     mail_to: list[str] = field(default_factory=list)
+    alerte_to: list[str] = field(default_factory=list)
     # Exécution
     semaines: int = 8
     essais: int = 3
@@ -62,6 +63,8 @@ class Config:
             smtp_user=g("SMTP_USER"),
             smtp_password=g("SMTP_PASSWORD"),
             mail_to=_liste(g("MAIL_TO")),
+            # Alertes de panne : l'administrateur seul (par défaut, l'expéditeur)
+            alerte_to=_liste(g("ALERT_TO") or g("SMTP_USER")),
             semaines=int(g("WEEKS", "8")),
             essais=int(g("FETCH_ATTEMPTS", "3")),
             delai_essai=int(g("FETCH_RETRY_DELAY", "300")),

@@ -114,25 +114,38 @@ def test_compteur_echecs(tmp_path):
     assert c.lire() == 0 and c.echec() == 1
 
 
-def test_sync_compte_les_echecs_et_alerte_au_troisieme(tmp_path, monkeypatch):
+def test_sync_alerte_au_troisieme_echec_a_l_admin_seul_puis_retabli(tmp_path, monkeypatch):
     import planning_relay.__main__ as m
     import planning_relay.synchro as s
     import planning_relay.agenda as a
     import planning_relay.connecteurs as co
     import planning_relay.mail as ml
+    from planning_relay.connecteurs.silae import IdentifiantsRefuses
 
     envois = []
     monkeypatch.setattr(co, "creer_connecteur", lambda cfg: None)
     monkeypatch.setattr(a, "Agenda", lambda cfg: None)
-    monkeypatch.setattr(ml.Messagerie, "envoyer", lambda self, *args: envois.append(args[0]))
-    monkeypatch.setattr(s, "passage", lambda *args: (_ for _ in ()).throw(RuntimeError("site modifié")))
-    config = cfg(STATE_DIR=str(tmp_path))
+    monkeypatch.setattr(ml.Messagerie, "envoyer",
+                        lambda self, objet, texte, html=None, dest=None: envois.append((objet, texte, dest)))
+    monkeypatch.setattr(s, "passage", lambda *args: (_ for _ in ()).throw(IdentifiantsRefuses("x")))
+    config = cfg(STATE_DIR=str(tmp_path), MAIL_TO="rudy@x.fr,charlene@x.fr", SMTP_USER="rudy@x.fr")
     assert [m.synchro(config) for _ in range(4)] == [1, 1, 1, 1]
-    assert envois == ["Planning de Charlène : synchro en panne"]
+    [(objet, texte, dest)] = envois
+    assert dest == ["rudy@x.fr"]  # jamais Charlène
+    assert objet == "⚠ planning-relay en panne : Silae refuse la connexion de Charlène"
+    assert "mot de passe sirh.software a probablement changé" in texte and "PLATFORM_PASSWORD" in texte
 
     monkeypatch.setattr(s, "passage", lambda *args: [])
     assert m.synchro(config) == 0
+    assert envois[-1][0] == "✓ planning-relay refonctionne" and envois[-1][2] == ["rudy@x.fr"]
+    assert "après 4 échecs" in envois[-1][1]
     assert Compteur(str(tmp_path)).lire() == 0
+    assert m.synchro(config) == 0 and len(envois) == 2  # pas de second mail de rétablissement
+
+
+def test_alert_to_configurable():
+    assert cfg(SMTP_USER="rudy@x.fr").alerte_to == ["rudy@x.fr"]
+    assert cfg(SMTP_USER="rudy@x.fr", ALERT_TO="rudy@x.fr, charlene@x.fr").alerte_to == ["rudy@x.fr", "charlene@x.fr"]
 
 
 def test_repos_ignores_par_defaut_meme_variable_vide():

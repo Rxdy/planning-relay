@@ -30,6 +30,18 @@ class ConnexionRefusee(Exception):
     pass
 
 
+class IdentifiantsRefuses(ConnexionRefusee):
+    pass
+
+
+class SiteModifie(ConnexionRefusee):
+    pass
+
+
+class SessionPerdue(ConnexionRefusee):
+    pass
+
+
 def creneau_depuis_evenement(ev: dict) -> Creneau:
     debut = datetime.fromisoformat(ev["start"])
     # `end` est coupé à 23:59 pour l'affichage ; `_end` porte la vraie fin (NIGHT : le lendemain).
@@ -88,7 +100,7 @@ class ConnecteurSilae:
         page.raise_for_status()
         jeton = _CSRF.search(page.text)
         if not jeton:
-            raise ConnexionRefusee("Jeton CSRF absent de la page de connexion : le site a changé ?")
+            raise SiteModifie("Jeton CSRF absent de la page de connexion")
         r = client.post("/login", data={
             "_username": self.identifiant,
             "_password": self.mot_de_passe,
@@ -96,7 +108,7 @@ class ConnecteurSilae:
         })
         r.raise_for_status()
         if r.url.path.startswith("/login"):
-            raise ConnexionRefusee("Connexion refusée : identifiants expirés ?")
+            raise IdentifiantsRefuses("Retour sur la page de connexion après envoi des identifiants")
 
     def _evenements(self, client: httpx.Client, debut: date, fin: date) -> list[dict]:
         # Lundi de la semaine de début → dimanche de la semaine de fin, comme la vue Semaine.
@@ -107,7 +119,7 @@ class ConnecteurSilae:
         })
         r.raise_for_status()
         if r.url.path.startswith("/login"):
-            raise ConnexionRefusee("Session perdue avant la lecture du planning")
+            raise SessionPerdue("Redirigé vers la connexion en lisant le planning")
         return r.json()
 
     def _deconnecter(self, client: httpx.Client) -> None:
