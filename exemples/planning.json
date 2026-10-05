@@ -1,0 +1,6 @@
+[
+  {"jour": "2026-10-06", "code": "SOIR", "texte": "14:45 - 22:45 (7h30), pause 30 min"},
+  {"jour": "2026-10-07", "code": "NIGHT", "texte": "22:45 - 07:00 (7h45), pause 30 min"},
+  {"jour": "2026-10-08", "code": "R"},
+  {"jour": "2026-10-09", "code": "07H", "texte": "07:00 - 15:45 (8h15), pause 30 min"}
+]

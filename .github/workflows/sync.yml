@@ -1,0 +1,73 @@
+name: Synchro planning
+
+# Tourne sur le Raspberry (runner auto-hébergé). Jamais déclenché par une pull
+# request : seuls la planification et un lancement manuel l'exécutent, avec le
+# fichier de workflow de la branche choisie.
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Tag de l'image
+        type: choice
+        options: [latest, staging, dev]
+        default: latest
+      dry_run:
+        description: Ne rien écrire ni envoyer
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  packages: read
+
+concurrency:
+  group: synchro
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/rxdy/planning-relay:${{ inputs.image || 'latest' }}
+  PLATFORM_USER: ${{ secrets.PLATFORM_USER }}
+  PLATFORM_PASSWORD: ${{ secrets.PLATFORM_PASSWORD }}
+  PERSON_MATCH: ${{ vars.PERSON_MATCH }}
+  GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+  CALENDAR_ID: ${{ vars.CALENDAR_ID }}
+  SMTP_USER: ${{ secrets.SMTP_USER }}
+  SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+  MAIL_TO: ${{ vars.MAIL_TO }}
+  SKIP_CODES: ${{ vars.SKIP_CODES }}
+  EVENT_COLOR_ID: ${{ vars.EVENT_COLOR_ID }}
+  DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+
+jobs:
+  sync:
+    runs-on: [self-hosted, linux, ARM64]
+    timeout-minutes: 20
+    steps:
+      - name: Connexion à ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Passage
+        # -e VAR sans valeur : transmis au conteneur sans passer par la ligne de commande ni le disque
+        run: >
+          docker run --rm --pull always
+          -e PLATFORM_USER -e PLATFORM_PASSWORD -e PERSON_MATCH
+          -e GOOGLE_SA_JSON -e CALENDAR_ID
+          -e SMTP_USER -e SMTP_PASSWORD -e MAIL_TO
+          -e SKIP_CODES -e EVENT_COLOR_ID -e DRY_RUN
+          "$IMAGE" sync
+
+      - name: Alerte au 3e échec consécutif
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          docker run --rm
+          -e SMTP_USER -e SMTP_PASSWORD -e MAIL_TO
+          -e GITHUB_TOKEN -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_WORKFLOW_REF
+          "$IMAGE" alerte
+
+      - name: Déconnexion de ghcr.io
+        if: always()
+        run: docker logout ghcr.io
