@@ -102,8 +102,8 @@ def test_evenement_journee_entiere():
     assert ev["start"] == {"date": "2026-10-06"} and ev["end"] == {"date": "2026-10-07"}
 
 
-def test_alerte_seulement_au_troisieme_echec():
-    assert [doit_alerter(n) for n in range(1, 6)] == [False, False, True, False, False]
+def test_alerte_tous_les_trois_echecs():
+    assert [n for n in range(0, 13) if doit_alerter(n)] == [3, 6, 9, 12]
 
 
 def test_compteur_echecs(tmp_path):
@@ -130,17 +130,21 @@ def test_sync_alerte_au_troisieme_echec_a_l_admin_seul_puis_retabli(tmp_path, mo
     monkeypatch.setattr(s, "passage", lambda *args: (_ for _ in ()).throw(IdentifiantsRefuses("x")))
     config = cfg(STATE_DIR=str(tmp_path), MAIL_TO="rudy@x.fr,charlene@x.fr", SMTP_USER="rudy@x.fr")
     assert [m.synchro(config) for _ in range(4)] == [1, 1, 1, 1]
-    [(objet, texte, dest)] = envois
+    [(objet, texte, dest)] = envois  # une alerte au 3e échec, pas au 4e
     assert dest == ["rudy@x.fr"]  # jamais Charlène
     assert objet == "⚠ planning-relay en panne : Silae refuse la connexion de Charlène"
     assert "mot de passe sirh.software a probablement changé" in texte and "PLATFORM_PASSWORD" in texte
 
+    assert "nouvelle alerte dans 3 heures" in texte
+    assert [m.synchro(config) for _ in range(2)] == [1, 1]  # 5e, 6e échec : 2e alerte
+    assert len(envois) == 2 and "6 passages" in envois[1][1]
+
     monkeypatch.setattr(s, "passage", lambda *args: [])
     assert m.synchro(config) == 0
     assert envois[-1][0] == "✓ planning-relay refonctionne" and envois[-1][2] == ["rudy@x.fr"]
-    assert "après 4 échecs" in envois[-1][1]
+    assert "après 6 échecs" in envois[-1][1]
     assert Compteur(str(tmp_path)).lire() == 0
-    assert m.synchro(config) == 0 and len(envois) == 2  # pas de second mail de rétablissement
+    assert m.synchro(config) == 0 and len(envois) == 3  # pas de second mail de rétablissement
 
 
 def test_alert_to_configurable():
