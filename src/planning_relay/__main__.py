@@ -56,8 +56,7 @@ def synchro(cfg: Config) -> int:
     from zoneinfo import ZoneInfo
 
     from .agenda import Agenda
-    from .alerte import (SEUIL, Absence, Compteur, doit_alerter, mail_alerte, mail_planning_republie,
-                         mail_planning_retire, mail_retabli)
+    from .alerte import SEUIL, Compteur, doit_alerter, mail_alerte, mail_retabli
     from .connecteurs import creer_connecteur
     from .diagnostic import diagnostiquer
     from .mail import Messagerie
@@ -65,7 +64,6 @@ def synchro(cfg: Config) -> int:
 
     maintenant = datetime.now(ZoneInfo(cfg.fuseau))
     compteur = Compteur(cfg.dossier_etat)
-    absence = Absence(cfg.dossier_etat)
 
     def informer(mail: tuple[str, str, str], quoi: str) -> None:
         try:
@@ -80,13 +78,14 @@ def synchro(cfg: Config) -> int:
         compteur.succes()
 
     try:
-        changements = passage(cfg, creer_connecteur(cfg), Agenda(cfg), Messagerie(cfg))
+        passage(cfg, creer_connecteur(cfg), Agenda(cfg), Messagerie(cfg))
     except PlanningRetire as e:
-        # Pas une panne : Silae répond, mais l'employeur a retiré le planning.
+        # Pas une panne et rien à signaler : l'employeur a retiré le planning,
+        # souvent pour le republier. L'agenda garde les derniers créneaux connus ;
+        # à la republication, les mails habituels signaleront les changements.
         fin_de_panne()
-        if absence.commencer(maintenant):
-            informer(mail_planning_retire(cfg, maintenant, e.equipe_vide), "planning retiré")
-        log.warning("Planning absent de Silae depuis le %s ; agenda inchangé", f"{absence.depuis():%d/%m %H:%M}")
+        portee = "toute l'équipe" if e.equipe_vide else "seulement la personne suivie"
+        log.warning("Planning retiré de Silae (%s) ; agenda inchangé, aucun mail", portee)
         return 0
     except Exception as e:
         n = compteur.echec(maintenant)
@@ -98,8 +97,6 @@ def synchro(cfg: Config) -> int:
         return 1
 
     fin_de_panne()
-    if absence.depuis():
-        informer(mail_planning_republie(cfg, absence.terminer(), maintenant, len(changements)), "planning republié")
     return 0
 
 
