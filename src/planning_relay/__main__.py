@@ -60,35 +60,43 @@ def synchro(cfg: Config) -> int:
     from .connecteurs import creer_connecteur
     from .diagnostic import diagnostiquer
     from .mail import Messagerie
-    from .synchro import passage
+    from .synchro import PlanningRetire, passage
 
     maintenant = datetime.now(ZoneInfo(cfg.fuseau))
     compteur = Compteur(cfg.dossier_etat)
+
+    def informer(mail: tuple[str, str, str], quoi: str) -> None:
+        try:
+            Messagerie(cfg).envoyer(*mail, cfg.alerte_to)
+            log.info("Mail envoyé : %s", quoi)
+        except Exception as e2:
+            log.error("Mail « %s » impossible à envoyer (%s)", quoi, type(e2).__name__)
+
+    def fin_de_panne() -> None:
+        if (n := compteur.lire()) >= SEUIL:  # une alerte était partie
+            informer(mail_retabli(cfg, n, compteur.depuis(), maintenant), "rétablissement")
+        compteur.succes()
+
     try:
         passage(cfg, creer_connecteur(cfg), Agenda(cfg), Messagerie(cfg))
+    except PlanningRetire as e:
+        # Pas une panne et rien à signaler : l'employeur a retiré le planning,
+        # souvent pour le republier. L'agenda garde les derniers créneaux connus ;
+        # à la republication, les mails habituels signaleront les changements.
+        fin_de_panne()
+        portee = "toute l'équipe" if e.equipe_vide else "seulement la personne suivie"
+        log.warning("Planning retiré de Silae (%s) ; agenda inchangé, aucun mail", portee)
+        return 0
     except Exception as e:
         n = compteur.echec(maintenant)
         diag = diagnostiquer(e)
         # Ne logguer que le diagnostic : le texte brut d'une erreur peut contenir des données.
         log.error("Passage en échec (%s : %s), %d échec(s) d'affilée", diag.etape, diag.detail, n)
         if doit_alerter(n):
-            try:
-                objet, texte, html = mail_alerte(cfg, diag, n, compteur.depuis())
-                Messagerie(cfg).envoyer(objet, texte, html, cfg.alerte_to)
-                log.info("Alerte envoyée")
-            except Exception as e2:
-                log.error("Alerte impossible à envoyer (%s)", type(e2).__name__)
+            informer(mail_alerte(cfg, diag, n, compteur.depuis()), "alerte de panne")
         return 1
 
-    n = compteur.lire()
-    if n >= SEUIL:
-        # Une alerte était partie : on prévient que c'est reparti.
-        try:
-            objet, texte, html = mail_retabli(cfg, n, compteur.depuis(), maintenant)
-            Messagerie(cfg).envoyer(objet, texte, html, cfg.alerte_to)
-        except Exception as e2:
-            log.error("Mail de rétablissement impossible à envoyer (%s)", type(e2).__name__)
-    compteur.succes()
+    fin_de_panne()
     return 0
 
 

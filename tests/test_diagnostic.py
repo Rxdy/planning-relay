@@ -8,7 +8,7 @@ import pytest
 from planning_relay.connecteurs import LigneIntrouvable
 from planning_relay.connecteurs.silae import IdentifiantsRefuses, SessionPerdue, SiteModifie
 from planning_relay.diagnostic import diagnostiquer
-from planning_relay.synchro import GardeFou, etape
+from planning_relay.synchro import etape
 
 
 def avec_etape(e, nom):
@@ -38,7 +38,6 @@ def http_status(code):
     (SiteModifie("x"), "Silae", "connecteur Silae est à adapter"),
     (SessionPerdue("x"), "Silae", "prochain passage"),
     (LigneIntrouvable("x"), "Silae", "PERSON_MATCH"),
-    (GardeFou("x"), "Silae", "rien n'a été supprimé"),
     (http_status(503), "Silae", "maintenance"),
     (http_status(404), "Silae", "a peut-être changé"),
     (httpx.ConnectError("x"), "Silae", "injoignable"),

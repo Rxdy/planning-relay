@@ -121,3 +121,4 @@ def mail_retabli(cfg: Config, n: int, depuis: datetime | None, maintenant: datet
         "Les changements de planning survenus pendant la panne ont été repris à ce passage.</div></div>"
     )
     return objet, texte, html
+

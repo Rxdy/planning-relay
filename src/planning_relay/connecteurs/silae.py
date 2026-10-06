@@ -76,6 +76,7 @@ class ConnecteurSilae:
         self.identifiant = identifiant
         self.mot_de_passe = mot_de_passe
         self.matricule = matricule
+        self.equipe_vide: bool | None = None
 
     def recuperer(self, debut: date, fin: date) -> list[Creneau]:
         with httpx.Client(
@@ -90,6 +91,8 @@ class ConnecteurSilae:
             finally:
                 self._deconnecter(client)
 
+        # Ligne d'équipe vide aussi : tout le service a été retiré, pas seulement elle
+        self.equipe_vide = not any(ev.get("owner") == "service" for ev in evenements)
         creneaux = creneaux_de(evenements, self.matricule)
         if not creneaux and any(ev.get("owner") == "employee" for ev in evenements):
             raise LigneIntrouvable("Des événements personnels existent mais aucun pour ce matricule")
