@@ -6,7 +6,7 @@ from planning_relay.agenda import creneau_depuis_proprietes, evenement
 from planning_relay.alerte import Compteur, doit_alerter
 from planning_relay.config import Config
 from planning_relay.modeles import creneau_depuis_cellule as cc
-from planning_relay.synchro import GardeFou, fenetre, passage
+from planning_relay.synchro import PlanningRetire, fenetre, passage
 
 LUNDI = date(2026, 10, 5)
 MARDI = date(2026, 10, 6)
@@ -72,7 +72,7 @@ def test_jours_passes_ignores():
 
 def test_garde_fou_planning_vide():
     agenda = Agenda({MARDI: cc(MARDI, "R")})
-    with pytest.raises(GardeFou):
+    with pytest.raises(PlanningRetire):
         passage(cfg(), Connecteur([]), agenda, Messagerie(), LUNDI)
     assert agenda.appliques is None
 
@@ -154,3 +154,63 @@ def test_repos_ignores_par_defaut_meme_variable_vide():
     passage(cfg(SKIP_CODES=""), Connecteur([cc(MARDI, "R"), cc(LUNDI + timedelta(days=2), "RF")]),
             agenda, Messagerie(), LUNDI)
     assert agenda.appliques is None
+
+
+
+def test_planning_retire_n_est_pas_une_panne(tmp_path, monkeypatch):
+    import planning_relay.__main__ as m
+    import planning_relay.synchro as s
+    import planning_relay.agenda as a
+    import planning_relay.connecteurs as co
+    import planning_relay.mail as ml
+
+    envois = []
+    monkeypatch.setattr(co, "creer_connecteur", lambda cfg: None)
+    monkeypatch.setattr(a, "Agenda", lambda cfg: None)
+    monkeypatch.setattr(ml.Messagerie, "envoyer",
+                        lambda self, objet, texte, html=None, dest=None: envois.append((objet, texte, dest)))
+    monkeypatch.setattr(s, "passage", lambda *args: (_ for _ in ()).throw(PlanningRetire(equipe_vide=True)))
+    config = cfg(STATE_DIR=str(tmp_path), SMTP_USER="rudy@x.fr", ALERT_TO="rudy@x.fr,charlene@x.fr")
+
+    # 5 passages sans planning : succès, un seul mail d'information, aucune alerte
+    assert [m.synchro(config) for _ in range(5)] == [0] * 5
+    assert [e[0] for e in envois] == ["ℹ Planning de Charlène retiré de Silae"]
+    assert "toute l'équipe" in envois[0][1] and "pas une panne" in envois[0][1]
+    assert envois[0][2] == ["rudy@x.fr", "charlene@x.fr"]
+    assert Compteur(str(tmp_path)).lire() == 0  # healthcheck reste sain
+
+    # Le planning revient avec 2 changements : un mail « republié »
+    monkeypatch.setattr(s, "passage", lambda *args: ["ch1", "ch2"])
+    assert m.synchro(config) == 0
+    assert envois[-1][0] == "ℹ Planning de Charlène republié sur Silae"
+    assert "2 changements" in envois[-1][1]
+    assert m.synchro(config) == 0 and len(envois) == 2  # rien de plus ensuite
+
+
+def test_planning_retire_pendant_une_panne_clot_la_panne(tmp_path, monkeypatch):
+    import planning_relay.__main__ as m
+    import planning_relay.synchro as s
+    import planning_relay.agenda as a
+    import planning_relay.connecteurs as co
+    import planning_relay.mail as ml
+
+    envois = []
+    monkeypatch.setattr(co, "creer_connecteur", lambda cfg: None)
+    monkeypatch.setattr(a, "Agenda", lambda cfg: None)
+    monkeypatch.setattr(ml.Messagerie, "envoyer",
+                        lambda self, objet, texte, html=None, dest=None: envois.append(objet))
+    monkeypatch.setattr(s, "passage", lambda *args: (_ for _ in ()).throw(RuntimeError("?")))
+    config = cfg(STATE_DIR=str(tmp_path), SMTP_USER="rudy@x.fr")
+    for _ in range(3):
+        m.synchro(config)
+    monkeypatch.setattr(s, "passage", lambda *args: (_ for _ in ()).throw(PlanningRetire(equipe_vide=False)))
+    m.synchro(config)
+    assert envois[1:] == ["✓ planning-relay refonctionne", "ℹ Planning de Charlène retiré de Silae"]
+
+
+def test_mail_retire_seulement_elle():
+    from datetime import datetime
+    from planning_relay.alerte import mail_planning_retire
+
+    objet, texte, html = mail_planning_retire(cfg(), datetime(2026, 10, 6, 10, 0), equipe_vide=False)
+    assert "Seul le planning de Charlène" in texte and "le 06/10 à 10:00" in texte

@@ -15,8 +15,14 @@ from .modeles import Changement, Creneau
 log = logging.getLogger("planning_relay")
 
 
-class GardeFou(Exception):
-    """Lecture suspecte : on s'arrête sans rien toucher dans l'agenda."""
+class PlanningRetire(Exception):
+    """Silae répond normalement mais ne publie plus aucun créneau pour la personne,
+    alors que l'agenda en contient. Ce n'est pas une panne : l'employeur a retiré
+    le planning, souvent le temps de le republier. On ne touche pas à l'agenda."""
+
+    def __init__(self, equipe_vide: bool | None = None):
+        super().__init__("Aucun créneau publié sur Silae alors que l'agenda en contient")
+        self.equipe_vide = equipe_vide
 
 
 @contextmanager
@@ -70,8 +76,7 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
     log.info("Créneaux lus : %d ; déjà dans l'agenda : %d", len(lus), len(connus))
 
     if not lus_bruts and connus:
-        with etape("Silae"):
-            raise GardeFou("Planning vide alors que l'agenda en contient : rien n'est supprimé")
+        raise PlanningRetire(getattr(connecteur, "equipe_vide", None))
 
     if not cfg.dry_run:
         # Titres écrits par une version précédente : mis à jour sans mail.

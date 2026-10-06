@@ -121,3 +121,76 @@ def mail_retabli(cfg: Config, n: int, depuis: datetime | None, maintenant: datet
         "Les changements de planning survenus pendant la panne ont été repris à ce passage.</div></div>"
     )
     return objet, texte, html
+
+
+class Absence:
+    """Planning retiré de Silae : date de début, pour n'envoyer qu'un mail par épisode."""
+
+    def __init__(self, dossier: str):
+        self.fichier = Path(dossier) / "planning_absent_depuis"
+
+    def depuis(self) -> datetime | None:
+        try:
+            return datetime.fromisoformat(self.fichier.read_text().strip())
+        except (FileNotFoundError, ValueError):
+            return None
+
+    def commencer(self, maintenant: datetime) -> bool:
+        """Vrai si l'absence commence à ce passage (donc mail à envoyer)."""
+        if self.depuis():
+            return False
+        self.fichier.parent.mkdir(parents=True, exist_ok=True)
+        self.fichier.write_text(maintenant.isoformat())
+        return True
+
+    def terminer(self) -> datetime | None:
+        debut = self.depuis()
+        self.fichier.unlink(missing_ok=True)
+        return debut
+
+
+def mail_planning_retire(cfg: Config, depuis: datetime, equipe_vide: bool | None) -> tuple[str, str, str]:
+    p = cfg.personne
+    objet = f"ℹ Planning de {p} retiré de Silae"
+    if equipe_vide:
+        portee = "Le planning de toute l'équipe a disparu, pas seulement le sien : c'est l'employeur qui l'a retiré."
+    else:
+        portee = f"Seul le planning de {p} a disparu : l'employeur l'a retiré ou est en train de le modifier."
+    paragraphes = [
+        f"Depuis le {depuis:%d/%m à %H:%M}, plus aucun créneau de {p} n'est publié sur sirh.software.",
+        portee,
+        "Ce n'est pas une panne : la connexion à Silae fonctionne. C'est souvent le temps que le planning soit republié.",
+        f"L'agenda garde les derniers créneaux connus, rien n'a été supprimé. Dès que le planning revient, "
+        "l'agenda est mis à jour et les changements vous sont envoyés comme d'habitude.",
+    ]
+    texte = "\n\n".join(paragraphes)
+    html = (
+        f"<div style='{STYLE}'>"
+        f"<h2 style='font-size:18px;margin:0 0 4px'>Planning de {escape(p)} retiré de Silae</h2>"
+        "<p style='margin:0 0 12px;color:#666'>Ce n'est pas une panne.</p>"
+        "<div style='background:#e8f0fe;border-left:4px solid #3b4cc0;padding:12px 16px;margin:0 0 12px'>"
+        + "<br><br>".join(escape(x) for x in paragraphes[:2])
+        + "</div>"
+        + "".join(f"<p style='margin:0 0 8px;font-size:14px'>{escape(x)}</p>" for x in paragraphes[2:])
+        + "</div>"
+    )
+    return objet, texte, html
+
+
+def mail_planning_republie(cfg: Config, depuis: datetime | None, maintenant: datetime,
+                           nb_changements: int) -> tuple[str, str, str]:
+    p = cfg.personne
+    objet = f"ℹ Planning de {p} republié sur Silae"
+    suite = (f"{nb_changements} changement{'s' if nb_changements > 1 else ''} par rapport à avant : "
+             "le détail suit dans un mail par semaine concernée."
+             if nb_changements else "Rien n'a changé par rapport au planning d'avant.")
+    texte = (f"Le planning de {p} est de nouveau publié sur sirh.software (retiré {_quand(depuis)}, "
+             f"revu au passage de {maintenant:%H:%M}).\n\n{suite}")
+    html = (
+        f"<div style='{STYLE}'>"
+        f"<h2 style='font-size:18px;margin:0 0 4px'>Planning de {escape(p)} republié</h2>"
+        "<div style='background:#e8f5e9;border-left:4px solid #1a7f37;padding:12px 16px;margin:8px 0 0'>"
+        f"De nouveau publié sur sirh.software (retiré {_quand(depuis)}, revu au passage de {maintenant:%H:%M}).<br><br>"
+        f"{escape(suite)}</div></div>"
+    )
+    return objet, texte, html
