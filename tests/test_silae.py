@@ -42,3 +42,18 @@ def test_absence_journee_entiere_sans_duree():
 def test_matricule_obligatoire():
     with pytest.raises(ValueError):
         ConnecteurSilae("u", "p", "Charlène")
+
+
+
+def test_equipe_vide_detectee():
+    from unittest.mock import patch
+
+    c = ConnecteurSilae("u", "p", MOI)
+    with patch.object(c, "_connecter"), patch.object(c, "_deconnecter"), \
+         patch.object(c, "_evenements", return_value=[]):
+        assert c.recuperer(date(2026, 10, 5), date(2026, 10, 11)) == []
+    assert c.equipe_vide is True
+    with patch.object(c, "_connecter"), patch.object(c, "_deconnecter"), \
+         patch.object(c, "_evenements", return_value=EVENEMENTS):
+        c.recuperer(date(2026, 10, 5), date(2026, 10, 11))
+    assert c.equipe_vide is False

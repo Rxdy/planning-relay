@@ -15,7 +15,6 @@ import httpx
 
 from .connecteurs import LigneIntrouvable
 from .connecteurs.silae import IdentifiantsRefuses, SessionPerdue, SiteModifie
-from .synchro import GardeFou
 
 
 @dataclass(frozen=True)
@@ -58,11 +57,6 @@ def diagnostiquer(e: Exception) -> Diagnostic:
         return Diagnostic("Silae", "Le planning de Charlène est introuvable dans les données Silae.",
                           "Son matricule a peut-être changé (changement de contrat ou de service).",
                           "Vérifier le matricule dans « Ma fiche » sur sirh.software et le mettre dans PERSON_MATCH.",
-                          f"{nom} : {e}")
-    if isinstance(e, GardeFou):
-        return Diagnostic("Silae", "Silae renvoie un planning vide alors que l'agenda contient des créneaux.",
-                          "Panne ou maintenance de Silae, ou planning retiré. Par précaution, rien n'a été supprimé de l'agenda.",
-                          "Vérifier le planning de Charlène sur sirh.software.",
                           f"{nom} : {e}")
     if isinstance(e, httpx.HTTPStatusError):
         code = e.response.status_code
