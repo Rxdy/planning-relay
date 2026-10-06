@@ -52,8 +52,8 @@ class Compteur:
 
 
 def doit_alerter(echecs_consecutifs: int) -> bool:
-    # Une seule alerte par série d'échecs : au 3e, pas aux suivants.
-    return echecs_consecutifs == SEUIL
+    # Une alerte tous les SEUIL échecs (3, 6, 9…) tant que la panne dure.
+    return echecs_consecutifs > 0 and echecs_consecutifs % SEUIL == 0
 
 
 def _quand(d: datetime | None) -> str:
@@ -76,8 +76,8 @@ def mail_alerte(cfg: Config, diag: Diagnostic, n: int, depuis: datetime | None) 
         f"Détail technique : {diag.detail}",
     ]
     rassurant = (f"En attendant, l'agenda garde les derniers créneaux connus de {cfg.personne}, "
-                 "mais ses changements de planning ne sont plus repris. Le script réessaie à chaque heure "
-                 "et t'enverra un mail quand ça refonctionne. Pas d'autre alerte d'ici là.")
+                 "mais ses changements de planning ne sont plus repris. Le script réessaie à chaque heure : "
+                 f"nouvelle alerte dans {SEUIL} heures si ça dure, et un mail quand ça refonctionne.")
 
     texte = "\n".join(
         [f"La synchro du planning de {cfg.personne} échoue depuis {n} passages.", ""]
