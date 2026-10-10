@@ -88,7 +88,6 @@ def scenarios() -> list[Scenario]:
         Scenario("repos-devient-travail", "Jeudi : le repos devient un MATIN (ajout)", s41, {**s41, _d(8): matin(_d(8))}),
         Scenario("horaires-seuls", "Dimanche : même poste, horaires décalés d'une heure",
                  s41, {**s41, _d(11): Creneau(_d(11), "07H", time(8, 0), time(16, 45), "8h15", "30 min", "MATIN")}),
-        Scenario("suppression", "Mercredi : la NIGHT est annulée, le jour devient repos", s41, sans_mer),
         Scenario("ajout-semaine-connue", "Mercredi était vide, un SOIR y est ajouté", sans_mer, {**sans_mer, _d(7): soir(_d(7))}),
         Scenario("plusieurs-changements", "Trois jours changent dans la même semaine",
                  s41, {**s41, _d(7): soir(_d(7)), _d(8): matin(_d(8)), _d(10): night(_d(10))}),
