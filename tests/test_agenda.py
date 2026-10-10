@@ -9,6 +9,7 @@ from planning_relay.agenda import PROP, Agenda, evenement
 from planning_relay.apercu import SEMAINE_41, matin, night, soir
 from planning_relay.comparaison import comparer
 from planning_relay.config import Config
+from planning_relay.modeles import Creneau
 
 CFG = Config.depuis_env({"PERSON_NAME": "Charlène", "CALENDAR_ID": "affichage@group", "SYNC_KEY": "charlene",
                          "EVENT_COLOR_ID": "6"})
@@ -212,6 +213,38 @@ def test_restaurer_sans_creneau_grise_n_ecrit_rien(agenda):
     agenda.service.events().appels.clear()
     assert agenda.restaurer_supprimes() == 0
     assert agenda.service.events().appels == []
+
+
+def test_poste_porte_la_categorie_travail_absence_aucune():
+    assert evenement(night(date(2026, 10, 7)), CFG)["extendedProperties"]["private"]["categorie"] == "travail"
+    conges = Creneau(date(2026, 10, 8), "CP", None, None, None, None, "Congés payés")
+    assert evenement(conges, CFG)["extendedProperties"]["private"]["categorie"] == ""
+
+
+def test_categorie_ajoutee_aux_anciens_creneaux_sans_rien_changer(agenda):
+    synchroniser(agenda, SEMAINE)
+    for ev in stock(agenda).values():  # comme écrits par une version précédente
+        del ev["extendedProperties"]["private"]["categorie"]
+    avant = {i: ev["summary"] for i, ev in stock(agenda).items()}
+    agenda.lister(DEBUT, FIN)
+    agenda.service.events().appels.clear()
+    assert agenda.ajouter_categories() == len(SEMAINE)
+    assert {a[0] for a in agenda.service.events().appels} == {"patch"}
+    for i, ev in stock(agenda).items():
+        assert ev["summary"] == avant[i]
+        props = ev["extendedProperties"]["private"]
+        assert props["categorie"] in ("travail", "") and props[PROP] == "charlene"
+    agenda.lister(DEBUT, FIN)
+    assert agenda.ajouter_categories() == 0  # rien à refaire au passage suivant
+
+
+def test_restaurer_un_grise_ne_le_patche_pas_ensuite(agenda):
+    marquer_supprime(agenda, night(date(2026, 10, 7)), "gris")
+    del stock(agenda)["gris"]["extendedProperties"]["private"]["categorie"]
+    agenda.lister(DEBUT, FIN)
+    agenda.restaurer_supprimes()
+    assert agenda.ajouter_categories() == 0
+    assert stock(agenda)["gris"]["extendedProperties"]["private"]["categorie"] == "travail"
 
 
 def test_double_creneau_grise_retire(agenda):

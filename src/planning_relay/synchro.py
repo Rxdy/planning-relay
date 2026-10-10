@@ -82,9 +82,12 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
         # Titres écrits par une version précédente : mis à jour sans mail.
         with etape("Google Agenda"):
             r = agenda.restaurer_supprimes()
+            k = agenda.ajouter_categories()
             n = agenda.rafraichir_titres()
         if r:
             log.info("Créneaux grisés « (supprimé) » remis comme connus : %d", r)
+        if k:
+            log.info("Catégorie ajoutée aux créneaux existants : %d", k)
         if n:
             log.info("Titres remis au format actuel : %d", n)
 
