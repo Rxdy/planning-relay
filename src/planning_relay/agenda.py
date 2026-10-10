@@ -4,9 +4,9 @@ Seuls les événements portant la propriété privée `planning_relay` sont lus 
 modifiés : les saisies manuelles restent intactes.
 
 Les changements restent visibles sur l'affichage : un créneau modifié porte
-« (modifié) » et l'ancien créneau en description ; un créneau supprimé n'est
-pas effacé mais grisé avec « (supprimé) ». Ce marqueur ne compte pas comme
-créneau connu, et il est réutilisé si un créneau revient ce jour-là.
+« (modifié) » et l'ancien créneau en description. Un créneau qui disparaît de
+Silae reste tel quel (voir synchro) ; les créneaux grisés « (supprimé) »
+écrits par une version précédente redeviennent des créneaux connus.
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ class Agenda:
         self.cfg = cfg
         self.service = service or self._service()
         self._ids: dict[date, str] = {}
-        self._marqueurs: dict[date, tuple[str, Creneau]] = {}  # créneaux supprimés encore affichés
+        self._supprimes: dict[str, Creneau] = {}  # id → créneau grisé par une version précédente
         self._titres: dict[str, tuple[str, str]] = {}  # id → (titre actuel, titre attendu)
 
     def _service(self):
@@ -128,7 +128,7 @@ class Agenda:
         }
         connus: dict[date, Creneau] = {}
         self._ids.clear()
-        self._marqueurs.clear()
+        self._supprimes.clear()
         self._titres.clear()
         requete = self.service.events().list(**params)
         while requete is not None:
@@ -139,34 +139,35 @@ class Agenda:
                 if not debut <= c.jour <= fin:
                     continue
                 self._titres[ev["id"]] = (ev.get("summary", ""), titre(c, self.cfg, props.get("etat", "")))
-                if props.get("etat") == "supprime":
-                    if c.jour in self._marqueurs:
-                        self._supprimer(ev["id"])
-                    else:
-                        self._marqueurs[c.jour] = (ev["id"], c)
-                    continue
                 if c.jour in connus:
                     # Doublon laissé par une exécution interrompue : on le retire.
                     self._supprimer(ev["id"])
                     continue
                 connus[c.jour] = c
                 self._ids[c.jour] = ev["id"]
+                if props.get("etat") == "supprime":
+                    self._supprimes[ev["id"]] = c
             requete = self.service.events().list_next(requete, reponse)
         return connus
 
     def appliquer(self, changements: list[Changement], aujourdhui: date | None = None) -> None:
         aujourdhui = aujourdhui or datetime.now(ZoneInfo(self.cfg.fuseau)).date()
         for ch in changements:
-            if ch.type == "ajout" and ch.jour in self._marqueurs:
-                # Un créneau revient sur un jour supprimé : c'est une modification.
-                id_, ancien = self._marqueurs.pop(ch.jour)
-                self._mettre_a_jour(id_, evenement(ch.apres, self.cfg, "modifie", ancien, aujourdhui))
-            elif ch.type == "ajout":
+            if ch.type == "ajout":
                 self.service.events().insert(calendarId=self.cfg.calendar_id, body=evenement(ch.apres, self.cfg)).execute()
             elif ch.type == "modif":
                 self._mettre_a_jour(self._ids[ch.jour], evenement(ch.apres, self.cfg, "modifie", ch.avant, aujourdhui))
-            else:
-                self._mettre_a_jour(self._ids[ch.jour], evenement(ch.avant, self.cfg, "supprime", le=aujourdhui))
+            # Une suppression ne touche pas l'agenda : synchro ne la transmet pas.
+
+    def restaurer_supprimes(self) -> int:
+        """Remet en créneau normal ceux qu'une version précédente avait grisés
+        « (supprimé) » : une annulation ne compte plus, l'agenda garde le créneau."""
+        for event_id, c in self._supprimes.items():
+            self._mettre_a_jour(event_id, evenement(c, self.cfg))
+            self._titres[event_id] = (titre(c, self.cfg), titre(c, self.cfg))
+        n = len(self._supprimes)
+        self._supprimes.clear()
+        return n
 
     def rafraichir_titres(self) -> int:
         """Remet au format actuel les titres écrits par une version précédente
