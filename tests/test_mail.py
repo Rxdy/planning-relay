@@ -91,7 +91,7 @@ def test_jours_passes_marques_et_grises():
 
 
 def test_jour_vide_affiche_un_tiret():
-    assert "* mer. 07/10   Repos" in un_mail("suppression").texte
+    assert "  jeu. 08/10   Repos" in un_mail("changement-poste").texte
 
 
 # --- Détail du changement --------------------------------------------------
@@ -118,13 +118,6 @@ def test_horaires_seuls_pas_de_ligne_poste():
     assert section(un_mail("horaires-seuls").texte, "CE QUI CHANGE") == [
         "- dim. 11/10 · Modifié",
         "    Horaires : 07:00–15:45 → 08:00–16:45",
-    ]
-
-
-def test_suppression():
-    assert section(un_mail("suppression").texte, "CE QUI CHANGE") == [
-        "- mer. 07/10 · Annulé",
-        "    Nuit 22:45–07:00 → Repos",
     ]
 
 

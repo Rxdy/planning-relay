@@ -189,41 +189,35 @@ def test_repos_devient_horaire(agenda):
 SANS_MER = {j: c for j, c in SEMAINE.items() if j != date(2026, 10, 7)}
 
 
-def test_suppression_garde_l_evenement_grise_et_marque(agenda):
-    synchroniser(agenda, SEMAINE)
-    chs = synchroniser(agenda, SANS_MER)
-    assert [(c.type, c.jour) for c in chs] == [("suppr", date(2026, 10, 7))]
-    ev = evenement_du(agenda, "2026-10-07")
-    assert ev["summary"] == "Charlène — Nuit (supprimé)"
-    assert ev["description"].startswith("Supprimé du planning le 06/10.")
-    assert ev["colorId"] == "8" and ev["transparency"] == "transparent"
-    assert not any(a[0] == "delete" for a in agenda.service.events().appels)
+def marquer_supprime(agenda, c, id_):
+    """Créneau grisé « (supprimé) » comme l'écrivait une version précédente."""
+    stock(agenda)[id_] = {**evenement(c, CFG, "supprime", le=LE), "id": id_}
 
 
-def test_marqueur_supprime_n_est_pas_un_creneau_connu(agenda):
-    synchroniser(agenda, SEMAINE)
+def test_ancien_creneau_grise_redevient_connu_et_normal(agenda):
     synchroniser(agenda, SANS_MER)
-    assert date(2026, 10, 7) not in agenda.lister(DEBUT, FIN)
-    assert synchroniser(agenda, SANS_MER) == []  # pas de nouvelle suppression à chaque passage
+    marquer_supprime(agenda, night(date(2026, 10, 7)), "gris")
+    assert agenda.lister(DEBUT, FIN) == SEMAINE
+    assert agenda.restaurer_supprimes() == 1
+    ev = stock(agenda)["gris"]
+    assert ev["summary"] == "Charlène — Nuit" and ev["colorId"] == "6"
+    assert "transparency" not in ev and not ev["description"].startswith("Supprimé")
+    assert agenda.rafraichir_titres() == 0
+    assert synchroniser(agenda, SEMAINE) == []  # republié à l'identique : rien
 
 
-def test_creneau_qui_revient_reutilise_le_marqueur(agenda):
+def test_restaurer_sans_creneau_grise_n_ecrit_rien(agenda):
     synchroniser(agenda, SEMAINE)
-    id_mer = evenement_du(agenda, "2026-10-07")["id"]
-    synchroniser(agenda, SANS_MER)
-    chs = synchroniser(agenda, {**SANS_MER, date(2026, 10, 7): soir(date(2026, 10, 7))})
-    assert [c.type for c in chs] == ["ajout"]
-    ev = evenement_du(agenda, "2026-10-07")
-    assert ev["id"] == id_mer and len(stock(agenda)) == 6
-    assert ev["summary"] == "Charlène — Soir (modifié)"
-    assert "avant : Nuit 22:45–07:00" in ev["description"]
-    assert "transparency" not in ev
+    agenda.lister(DEBUT, FIN)
+    agenda.service.events().appels.clear()
+    assert agenda.restaurer_supprimes() == 0
+    assert agenda.service.events().appels == []
 
 
-def test_double_marqueur_retire(agenda):
+def test_double_creneau_grise_retire(agenda):
     c = night(date(2026, 10, 7))
     for id_ in ("a", "b"):
-        agenda.service.events().stock[id_] = {**evenement(c, CFG, "supprime"), "id": id_}
+        marquer_supprime(agenda, c, id_)
     agenda.lister(DEBUT, FIN)
     assert len(stock(agenda)) == 1
 

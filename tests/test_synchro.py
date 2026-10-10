@@ -36,6 +36,9 @@ class Agenda:
     def appliquer(self, changements, aujourdhui=None):
         self.appliques = changements
 
+    def restaurer_supprimes(self):
+        return 0
+
     def rafraichir_titres(self):
         return 0
 
@@ -75,6 +78,44 @@ def test_garde_fou_planning_vide():
     with pytest.raises(PlanningRetire):
         passage(cfg(), Connecteur([]), agenda, Messagerie(), LUNDI)
     assert agenda.appliques is None
+
+
+def test_creneau_disparu_ni_mail_ni_ecriture():
+    c = cc(MARDI, "SOIR", "14:45 - 22:45")
+    agenda, mail = Agenda({MARDI: c, MARDI + timedelta(days=7): c}), Messagerie()
+    assert passage(cfg(), Connecteur([c]), agenda, mail, LUNDI) == []
+    assert mail.envois == [] and agenda.appliques is None
+
+
+def test_semaine_publiee_puis_retiree_puis_republiee():
+    """Le 10/10 : semaine suivante publiée à 10 h, retirée à 16 h, il ne reste qu'un créneau."""
+    reste = cc(MARDI, "SOIR", "14:45 - 22:45")
+    suivante = {MARDI + timedelta(days=i): cc(MARDI + timedelta(days=i), "MATIN", "06:00 - 13:30")
+                for i in range(7, 12)}
+    connus = {MARDI: reste, **suivante}
+    agenda, mail = Agenda(connus), Messagerie()
+    assert passage(cfg(), Connecteur([reste]), agenda, mail, LUNDI) == []
+    assert passage(cfg(), Connecteur([reste, *suivante.values()]), agenda, mail, LUNDI) == []
+    assert mail.envois == [] and agenda.appliques is None
+
+
+def test_modification_a_cote_d_un_jour_disparu():
+    """Seule la modif part ; le mail montre le jour disparu tel que l'agenda le garde."""
+    mer = MARDI + timedelta(days=1)
+    c_mar, c_mer = cc(MARDI, "SOIR", "14:45 - 22:45"), cc(mer, "SOIR", "14:45 - 22:45")
+    agenda = Agenda({MARDI: c_mar, mer: c_mer})
+    vus = []
+
+    class Mail(Messagerie):
+        def par_semaine(self, planning, connus, changements, aujourdhui):
+            vus.append(planning)
+            super().par_semaine(planning, connus, changements, aujourdhui)
+
+    nouveau = cc(MARDI, "MATIN", "06:00 - 13:30")
+    ch = passage(cfg(), Connecteur([nouveau]), agenda, Mail(), LUNDI)
+    assert [(c.type, c.jour) for c in ch] == [("modif", MARDI)]
+    assert agenda.appliques == ch
+    assert vus[0][mer] == c_mer and vus[0][MARDI] == nouveau
 
 
 def test_codes_ignores():

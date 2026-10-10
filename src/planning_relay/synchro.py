@@ -81,11 +81,22 @@ def passage(cfg: Config, connecteur, agenda, messagerie, aujourdhui: date | None
     if not cfg.dry_run:
         # Titres écrits par une version précédente : mis à jour sans mail.
         with etape("Google Agenda"):
+            r = agenda.restaurer_supprimes()
             n = agenda.rafraichir_titres()
+        if r:
+            log.info("Créneaux grisés « (supprimé) » remis comme connus : %d", r)
         if n:
             log.info("Titres remis au format actuel : %d", n)
 
+    # Un créneau qui disparaît de Silae n'est pas un changement : souvent
+    # l'employeur retire une semaine pour la republier. L'agenda garde le
+    # dernier créneau publié et seuls les ajouts et modifications préviennent.
     changements = comparer(connus, lus)
+    disparus = [ch for ch in changements if ch.type == "suppr"]
+    if disparus:
+        log.info("Créneaux disparus de Silae, ignorés : %d", len(disparus))
+        planning.update({ch.jour: ch.avant for ch in disparus})  # le mail montre l'agenda
+    changements = [ch for ch in changements if ch.type != "suppr"]
     log.info("Changements : %d", len(changements))
     if not changements:
         return []
