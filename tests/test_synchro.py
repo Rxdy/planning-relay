@@ -39,6 +39,9 @@ class Agenda:
     def restaurer_supprimes(self):
         return 0
 
+    def ajouter_categories(self):
+        return 0
+
     def rafraichir_titres(self):
         return 0
 

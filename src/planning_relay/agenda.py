@@ -7,6 +7,10 @@ Les changements restent visibles sur l'affichage : un créneau modifié porte
 « (modifié) » et l'ancien créneau en description. Un créneau qui disparaît de
 Silae reste tel quel (voir synchro) ; les créneaux grisés « (supprimé) »
 écrits par une version précédente redeviennent des créneaux connus.
+
+Chaque poste porte aussi la propriété privée `categorie` = « travail », que
+l'affichage (AbView) lit pour colorer la carte ; une absence (journée entière)
+n'en a pas.
 """
 
 from __future__ import annotations
@@ -51,6 +55,11 @@ def _libelle(c: Creneau | None) -> str:
     return _nom(c) if c.journee_entiere else f"{_nom(c)} {c.debut:%H:%M}–{c.fin:%H:%M}"
 
 
+def categorie(c: Creneau) -> str:
+    """Catégorie lue par AbView : un poste est du travail, une absence n'a pas de catégorie."""
+    return "" if c.journee_entiere else "travail"
+
+
 def titre(c: Creneau, cfg: Config, etat: str = "") -> str:
     return cfg.titre.format(personne=cfg.personne, poste=_nom(c), code=c.code) + MENTIONS.get(etat, "")
 
@@ -68,6 +77,7 @@ def evenement(c: Creneau, cfg: Config, etat: str = "", avant: Creneau | None = N
         "pause": c.pause or "",
         "intitule": c.intitule or "",
         "etat": etat,
+        "categorie": categorie(c),
     }
     quand = f" le {le:%d/%m}" if le else ""
     entete = {
@@ -103,6 +113,7 @@ class Agenda:
         self._ids: dict[date, str] = {}
         self._supprimes: dict[str, Creneau] = {}  # id → créneau grisé par une version précédente
         self._titres: dict[str, tuple[str, str]] = {}  # id → (titre actuel, titre attendu)
+        self._sans_categorie: dict[str, dict[str, str]] = {}  # id → propriétés privées complétées
 
     def _service(self):
         from google.oauth2 import service_account
@@ -130,6 +141,7 @@ class Agenda:
         self._ids.clear()
         self._supprimes.clear()
         self._titres.clear()
+        self._sans_categorie.clear()
         requete = self.service.events().list(**params)
         while requete is not None:
             reponse = requete.execute()
@@ -145,6 +157,8 @@ class Agenda:
                     continue
                 connus[c.jour] = c
                 self._ids[c.jour] = ev["id"]
+                if props.get("categorie", None) != categorie(c):
+                    self._sans_categorie[ev["id"]] = {**props, "categorie": categorie(c)}
                 if props.get("etat") == "supprime":
                     self._supprimes[ev["id"]] = c
             requete = self.service.events().list_next(requete, reponse)
@@ -165,8 +179,21 @@ class Agenda:
         for event_id, c in self._supprimes.items():
             self._mettre_a_jour(event_id, evenement(c, self.cfg))
             self._titres[event_id] = (titre(c, self.cfg), titre(c, self.cfg))
+            self._sans_categorie.pop(event_id, None)  # réécrit en entier, catégorie comprise
         n = len(self._supprimes)
         self._supprimes.clear()
+        return n
+
+    def ajouter_categories(self) -> int:
+        """Pose la propriété « categorie » sur les créneaux écrits par une version
+        précédente, sans rien changer d'autre (ni titre, ni mail)."""
+        for event_id, props in self._sans_categorie.items():
+            self.service.events().patch(
+                calendarId=self.cfg.calendar_id, eventId=event_id,
+                body={"extendedProperties": {"private": props}},
+            ).execute()
+        n = len(self._sans_categorie)
+        self._sans_categorie.clear()
         return n
 
     def rafraichir_titres(self) -> int:
