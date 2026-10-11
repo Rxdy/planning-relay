@@ -16,6 +16,8 @@ Calcul repris d'AbView (calendarStore.ts) pour ne rien changer à l'affichage :
   Sa catégorie vient du champ `categorie`.
 La couleur Google Agenda est EVENT_COLOR_ID (Paon, le travail) ; une personne peut
 la remplacer par son champ `couleur` ("" : pas de couleur, ex. la poubelle).
+Pas de notification, sauf `rappels` (minutes avant le début ; pour une journée
+entière, avant minuit : 300 = la veille à 19h, pour sortir la poubelle).
 Les semaines sont numérotées à l'ISO, combinées avec l'année civile, comme dans AbView.
 """
 
@@ -143,7 +145,8 @@ def synchro_horaires(cfg: Config, service=None, aujourdhui: date | None = None) 
     try:
         for personne in charger(cfg.fichier_horaires):
             pcfg = replace(cfg, personne=personne["name"], cle_synchro=cle(personne["name"]),
-                           couleur=personne.get("couleur", cfg.couleur) or None)
+                           couleur=personne.get("couleur", cfg.couleur) or None,
+                           rappels=tuple(personne.get("rappels", ())))
             agenda = Agenda(pcfg, service=service)
             service = agenda.service  # une seule connexion pour tout le passage
             passage_horaires(pcfg, personne, agenda, aujourdhui)

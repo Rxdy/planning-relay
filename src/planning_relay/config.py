@@ -29,6 +29,9 @@ class Config:
     calendar_id: str
     titre: str
     couleur: str | None
+    # Notifications Google Agenda, en minutes avant le début ; aucune par défaut
+    # (les postes sont quotidiens). Fixées par personne dans les horaires en dur.
+    rappels: tuple[int, ...] = ()
     codes_ignores: list[str] = field(default_factory=list)
     # Mail
     smtp_host: str = "smtp.gmail.com"
