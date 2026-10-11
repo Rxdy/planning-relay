@@ -28,6 +28,9 @@ services:
     env_file: .env
     environment:
       CONNECTOR: horaires
+      # Semaine en cours + la suivante : toujours 7 à 13 jours d'avance,
+      # assez pour les 8 jours affichés par AbView (Charlène garde 8 semaines)
+      WEEKS: "2"
     labels:
       - com.centurylinklabs.watchtower.enable=true
     volumes:

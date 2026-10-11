@@ -82,6 +82,18 @@ def test_nuit_finit_le_lendemain():
     assert (debut.date(), fin.date(), fin.time()) == (LUNDI, date(2026, 10, 13), time(5, 0))
 
 
+def test_deux_semaines_couvrent_les_8_jours_d_abview_quel_que_soit_le_jour():
+    from datetime import timedelta
+
+    from planning_relay.synchro import fenetre
+
+    for decalage in range(7):  # du lundi au dimanche
+        jour = LUNDI + timedelta(days=decalage)
+        debut, fin = fenetre(jour, 2)
+        assert debut == jour
+        assert 7 <= (fin - jour).days <= 13
+
+
 def test_cle_sans_accents():
     assert cle("Léa") == "horaires-lea"
     assert cle("Caroline") == "horaires-caroline"
