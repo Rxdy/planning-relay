@@ -198,6 +198,15 @@ def test_synchro_toutes_les_personnes_sans_mail(tmp_path):
     assert cles == {"horaires-rudy", "horaires-lea", "horaires-luis", "horaires-caroline", "horaires-poubelle"}
 
 
+def test_synchro_travail_en_paon_et_poubelle_sans_couleur(tmp_path):
+    service = FauxService()
+    cfg = replace(CFG, dossier_etat=str(tmp_path), couleur="7")
+    synchro_horaires(cfg, service=service, aujourdhui=LUNDI)
+    couleurs = {(e["extendedProperties"]["private"][PROP], e.get("colorId")) for e in service.events().stock.values()}
+    assert couleurs == {("horaires-rudy", "7"), ("horaires-lea", "7"), ("horaires-luis", "7"),
+                        ("horaires-caroline", "7"), ("horaires-poubelle", None)}
+
+
 def test_synchro_compte_les_echecs(tmp_path):
     cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_horaires=str(tmp_path / "absent.json"))
     assert synchro_horaires(cfg, service=FauxService(), aujourdhui=LUNDI) == 1

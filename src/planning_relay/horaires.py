@@ -14,6 +14,8 @@ Calcul repris d'AbView (calendarStore.ts) pour ne rien changer à l'affichage :
 - « allday » : journée entière certains jours (la poubelle du jeudi), avec en option
   une alternance par parité de semaine (`alternating`, Jaune / Noire) qui donne le poste.
   Sa catégorie vient du champ `categorie`.
+La couleur Google Agenda est EVENT_COLOR_ID (Paon, le travail) ; une personne peut
+la remplacer par son champ `couleur` ("" : pas de couleur, ex. la poubelle).
 Les semaines sont numérotées à l'ISO, combinées avec l'année civile, comme dans AbView.
 """
 
@@ -140,7 +142,8 @@ def synchro_horaires(cfg: Config, service=None, aujourdhui: date | None = None) 
     compteur = Compteur(cfg.dossier_etat)
     try:
         for personne in charger(cfg.fichier_horaires):
-            pcfg = replace(cfg, personne=personne["name"], cle_synchro=cle(personne["name"]))
+            pcfg = replace(cfg, personne=personne["name"], cle_synchro=cle(personne["name"]),
+                           couleur=personne.get("couleur", cfg.couleur) or None)
             agenda = Agenda(pcfg, service=service)
             service = agenda.service  # une seule connexion pour tout le passage
             passage_horaires(pcfg, personne, agenda, aujourdhui)

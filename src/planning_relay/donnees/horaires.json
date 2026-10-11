@@ -142,6 +142,7 @@
     "name": "Poubelle",
     "type": "allday",
     "categorie": "poubelle",
+    "couleur": "",
     "days": ["thursday"],
     "alternating": [
       { "weekMod2": 0, "type": "Jaune" },
