@@ -20,6 +20,8 @@ class Creneau:
     # Poste donné par la source (horaires en dur) ; None : déduit des horaires (Silae),
     # "" : pas de poste (horaires fixes, le titre est le prénom seul)
     poste: str | None = None
+    # Catégorie donnée par la source (ex. « poubelle ») ; None : déduite (voir agenda.categorie)
+    categorie: str | None = None
 
     @property
     def journee_entiere(self) -> bool:

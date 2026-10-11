@@ -1,4 +1,4 @@
-"""Horaires en dur (CONNECTOR=horaires) : les postes de Rudy, Léa, Luis et Caroline.
+"""Horaires en dur (CONNECTOR=horaires) : les postes de Rudy, Léa, Luis et Caroline, et la poubelle.
 
 Contrairement à Silae, la source est un fichier du dépôt (donnees/horaires.json,
 format repris d'AbView) : l'agenda en est la copie exacte. Une modification
@@ -10,7 +10,10 @@ Calcul repris d'AbView (calendarStore.ts) pour ne rien changer à l'affichage :
 - « shift » : rotation sur plusieurs semaines. La position dans le cycle vient
   de `cycleAnchor` (semaine de référence) ou, à défaut, de `offset`. Une semaine
   de `weekOverrides` remplace la rotation, et `exceptions` remplace les horaires
-  d'un jour (une liste vide : pas de poste ce jour-là).
+  d'un jour (une liste vide : pas de poste ce jour-là) ;
+- « allday » : journée entière certains jours (la poubelle du jeudi), avec en option
+  une alternance par parité de semaine (`alternating`, Jaune / Noire) qui donne le poste.
+  Sa catégorie vient du champ `categorie`.
 Les semaines sont numérotées à l'ISO, combinées avec l'année civile, comme dans AbView.
 """
 
@@ -32,7 +35,7 @@ from .synchro import etape, fenetre
 log = logging.getLogger("planning_relay")
 
 JOURS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-TYPES = {"fixed", "shift"}
+TYPES = {"fixed", "shift", "allday"}
 
 
 def charger(chemin: str | Path) -> list[dict]:
@@ -60,6 +63,12 @@ def _position(personne: dict, jour: date, semaine: int) -> int:
 def horaires_du_jour(personne: dict, jour: date) -> tuple[str, list[str]]:
     """(poste, ["HH:MM-HH:MM", ...]) ; poste vide pour des horaires fixes."""
     nom_jour = JOURS[jour.weekday()]
+    if personne["type"] == "allday":
+        if nom_jour not in personne.get("days", []):
+            return "", []
+        parite = jour.isocalendar().week % 2
+        alterne = next((a["type"] for a in personne.get("alternating", []) if a["weekMod2"] == parite), "")
+        return alterne, ["journée"]
     if personne["type"] == "fixed":
         return "", personne.get("schedule", {}).get(nom_jour) or []
 
@@ -84,7 +93,10 @@ def creneaux(personne: dict, debut: date, fin: date) -> list[Creneau]:
         poste, heures = horaires_du_jour(personne, jour)
         if len(heures) > 1:
             raise ValueError(f"{personne['name']} : un seul créneau par jour ({jour}, {heures})")
-        if heures:
+        if heures and personne["type"] == "allday":
+            resultat.append(Creneau(jour=jour, code=poste or personne["name"], poste=poste,
+                                    categorie=personne.get("categorie")))
+        elif heures:
             h_debut, h_fin = heures[0].split("-")
             resultat.append(Creneau(
                 jour=jour,

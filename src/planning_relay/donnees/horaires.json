@@ -137,5 +137,15 @@
       }
     },
     "cycleAnchor": { "year": 2026, "week": 13, "position": 0 }
+  },
+  {
+    "name": "Poubelle",
+    "type": "allday",
+    "categorie": "poubelle",
+    "days": ["thursday"],
+    "alternating": [
+      { "weekMod2": 0, "type": "Jaune" },
+      { "weekMod2": 1, "type": "Noire" }
+    ]
   }
 ]

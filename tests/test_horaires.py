@@ -29,7 +29,7 @@ def semaine(nom: str, lundi: date = LUNDI) -> dict[str, tuple[str, str] | None]:
 # --- Calcul, semaine du 12/10/2026 telle qu'affichée par AbView ------------------
 
 def test_fichier_livre_les_quatre_personnes():
-    assert list(REGLES) == ["Rudy", "Léa", "Luis", "Caroline"]
+    assert list(REGLES) == ["Rudy", "Léa", "Luis", "Caroline", "Poubelle"]
 
 
 def test_lea_horaires_fixes_mercredi_different():
@@ -60,6 +60,15 @@ def test_caroline_cycle_ancre_et_vendredi_raccourci():
         "lun": ("Nuit", "21:00-05:00"), "mar": ("Nuit", "21:00-05:00"), "mer": ("Nuit", "21:00-05:00"),
         "jeu": ("Nuit", "21:00-05:00"), "ven": ("Nuit", "19:00-02:00"), "sam": None, "dim": None,
     }
+
+
+def test_poubelle_le_jeudi_jaune_et_noire_en_alternance():
+    # S42 paire → Jaune, S43 impaire → Noire ; journée entière, catégorie poubelle
+    jeudis = creneaux(REGLES["Poubelle"], LUNDI, date(2026, 10, 25))
+    assert [(c.jour, c.poste, c.journee_entiere, c.categorie) for c in jeudis] == [
+        (date(2026, 10, 15), "Jaune", True, "poubelle"),
+        (date(2026, 10, 22), "Noire", True, "poubelle"),
+    ]
 
 
 def test_semaine_modifiee_remplace_la_rotation():
@@ -115,6 +124,20 @@ def test_horaires_fixes_titre_prenom_seul():
     assert len(_stock(agenda)) == 10  # 2 semaines, du lundi au vendredi
 
 
+def test_poubelle_journee_entiere_dans_l_agenda():
+    cfg, agenda = _agenda("Poubelle")
+    passage_horaires(cfg, REGLES["Poubelle"], agenda, LUNDI)
+    evs = sorted(_stock(agenda).values(), key=lambda e: e["start"]["date"])
+    assert [(e["summary"], e["start"], e["end"]) for e in evs] == [
+        ("Poubelle — Jaune", {"date": "2026-10-15"}, {"date": "2026-10-16"}),
+        ("Poubelle — Noire", {"date": "2026-10-22"}, {"date": "2026-10-23"}),
+    ]
+    assert {e["extendedProperties"]["private"]["categorie"] for e in evs} == {"poubelle"}
+    # Relue depuis l'agenda, la catégorie ne déclenche ni correction ni changement
+    assert passage_horaires(cfg, REGLES["Poubelle"], agenda, LUNDI) == []
+    assert not [a for a in agenda.service.events().appels if a[0] == "patch"]
+
+
 def test_second_passage_ne_change_rien():
     cfg, agenda = _agenda("Caroline")
     passage_horaires(cfg, REGLES["Caroline"], agenda, LUNDI)
@@ -160,7 +183,7 @@ def test_synchro_toutes_les_personnes_sans_mail(tmp_path):
     cfg = replace(CFG, dossier_etat=str(tmp_path))
     assert synchro_horaires(cfg, service=service, aujourdhui=LUNDI) == 0
     cles = {e["extendedProperties"]["private"][PROP] for e in service.events().stock.values()}
-    assert cles == {"horaires-rudy", "horaires-lea", "horaires-luis", "horaires-caroline"}
+    assert cles == {"horaires-rudy", "horaires-lea", "horaires-luis", "horaires-caroline", "horaires-poubelle"}
 
 
 def test_synchro_compte_les_echecs(tmp_path):

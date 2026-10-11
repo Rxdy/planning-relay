@@ -45,6 +45,9 @@ def creneau_depuis_proprietes(props: dict[str, str]) -> Creneau:
         pause=props.get("pause") or None,
         intitule=props.get("intitule") or None,
         poste=props.get("poste"),
+        # La catégorie n'est relue que pour les horaires en dur (qui portent toujours « poste ») :
+        # pour Silae elle reste déduite, pour que ajouter_categories puisse corriger l'agenda.
+        categorie=props.get("categorie") if "poste" in props else None,
     )
 
 
@@ -61,7 +64,10 @@ def _libelle(c: Creneau | None) -> str:
 
 
 def categorie(c: Creneau) -> str:
-    """Catégorie lue par AbView : un poste est du travail, une absence n'a pas de catégorie."""
+    """Catégorie lue par AbView : celle de la source si elle en donne une, sinon un poste
+    est du travail et une absence n'a pas de catégorie."""
+    if c.categorie is not None:
+        return c.categorie
     return "" if c.journee_entiere else "travail"
 
 
