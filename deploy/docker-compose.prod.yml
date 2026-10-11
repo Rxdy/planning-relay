@@ -18,7 +18,7 @@ services:
         max-size: "5m"
         max-file: "2"
 
-  # Horaires en dur (Rudy, Léa, Luis, Caroline) : même image et même .env,
+  # Horaires en dur (Rudy, Léa, Luis, Caroline, poubelle) : même image et même .env,
   # sans Silae ni mail ; l'état (santé) a son propre volume.
   horaires:
     image: ghcr.io/rxdy/planning-relay:latest
