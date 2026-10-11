@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+# Horaires en dur livrés avec l'image (CONNECTOR=horaires)
+HORAIRES_PAR_DEFAUT = Path(__file__).parent / "donnees" / "horaires.json"
 
 
 def _liste(valeur: str) -> list[str]:
@@ -16,6 +20,7 @@ class Config:
     platform_password: str
     person_match: str
     fichier_planning: str
+    fichier_horaires: str
     # Personne suivie
     personne: str
     cle_synchro: str
@@ -50,6 +55,7 @@ class Config:
             platform_password=g("PLATFORM_PASSWORD"),
             person_match=g("PERSON_MATCH"),
             fichier_planning=g("PLANNING_FILE"),
+            fichier_horaires=g("HORAIRES_FILE") or str(HORAIRES_PAR_DEFAUT),
             personne=g("PERSON_NAME", "Charlène"),
             cle_synchro=g("SYNC_KEY", "charlene"),
             google_sa_json=g("GOOGLE_SA_JSON"),

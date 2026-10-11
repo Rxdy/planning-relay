@@ -18,5 +18,26 @@ services:
         max-size: "5m"
         max-file: "2"
 
+  # Horaires en dur (Rudy, Léa, Luis, Caroline) : même image et même .env,
+  # sans Silae ni mail ; l'état (santé) a son propre volume.
+  horaires:
+    image: ghcr.io/rxdy/planning-relay:latest
+    container_name: planning-relay-horaires
+    restart: unless-stopped
+    mem_limit: 128m
+    env_file: .env
+    environment:
+      CONNECTOR: horaires
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    volumes:
+      - planning-relay-horaires-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 volumes:
   planning-relay-data: {}
+  planning-relay-horaires-data: {}

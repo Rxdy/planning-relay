@@ -17,6 +17,9 @@ class Creneau:
     duree: str | None = None  # "7h30", tel qu'affiché
     pause: str | None = None  # "30 min", tel qu'affiché
     intitule: str | None = None  # "RECEP SOIR", "Récup Férié"
+    # Poste donné par la source (horaires en dur) ; None : déduit des horaires (Silae),
+    # "" : pas de poste (horaires fixes, le titre est le prénom seul)
+    poste: str | None = None
 
     @property
     def journee_entiere(self) -> bool:
@@ -93,6 +96,8 @@ def _ecart_debut(a: int, b: int) -> int:
 
 
 def poste(c: Creneau) -> str:
+    if c.poste is not None:
+        return c.poste
     if c.journee_entiere:
         return "Autre"
     m = _minutes(c)

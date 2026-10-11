@@ -36,6 +36,16 @@ Le conteneur passe en `unhealthy` après 3 échecs d'affilée, ou si aucun passa
 | `EVENT_COLOR_ID` | Couleur Google Agenda (1 à 11) |
 | `DRY_RUN` | `1` : ne rien écrire ni envoyer |
 
+## Horaires en dur
+
+Le conteneur `planning-relay-horaires` (même image, `CONNECTOR=horaires`) publie les postes de Rudy, Léa, Luis et Caroline, qui ne sont pas dans Silae. Ils sont écrits dans [src/planning_relay/donnees/horaires.json](src/planning_relay/donnees/horaires.json), au format repris d'AbView : `fixed` (mêmes horaires chaque semaine) ou `shift` (rotation sur plusieurs semaines, avec `cycleAnchor` ou `offset`, `weekOverrides` et `exceptions`).
+
+L'agenda est la copie exacte du fichier : un poste modifié est réécrit sans « (modifié) », un poste retiré est supprimé, et **aucun mail n'est envoyé** (les mails restent réservés au planning Silae). Chaque personne a sa propre clé (`planning_relay=horaires-<prénom>`), le titre est « Prénom — Poste » pour une rotation et le prénom seul pour des horaires fixes, et la catégorie `travail` est posée comme pour Silae. Changer un horaire : modifier le fichier, PR, merge ; Watchtower déploie et le passage suivant met l'agenda à jour.
+
+```sh
+docker exec planning-relay-horaires planning-relay sync   # passage immédiat
+```
+
 ## Développement
 
 ```sh
