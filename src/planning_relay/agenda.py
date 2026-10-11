@@ -25,6 +25,10 @@ from .modeles import Changement, Creneau, poste
 PROP = "planning_relay"
 MENTIONS = {"modifie": " (modifié)", "supprime": " (supprimé)"}
 GRIS = "8"  # Graphite dans la palette Google Agenda
+SOURCES = {
+    "silae": "Synchronisé depuis Silae RH Suite.",
+    "horaires": "Horaires fixes, publiés par planning-relay.",
+}
 
 
 def _t(valeur: str) -> time | None:
@@ -40,6 +44,10 @@ def creneau_depuis_proprietes(props: dict[str, str]) -> Creneau:
         duree=props.get("duree") or None,
         pause=props.get("pause") or None,
         intitule=props.get("intitule") or None,
+        poste=props.get("poste"),
+        # La catégorie n'est relue que pour les horaires en dur (qui portent toujours « poste ») :
+        # pour Silae elle reste déduite, pour que ajouter_categories puisse corriger l'agenda.
+        categorie=props.get("categorie") if "poste" in props else None,
     )
 
 
@@ -56,12 +64,17 @@ def _libelle(c: Creneau | None) -> str:
 
 
 def categorie(c: Creneau) -> str:
-    """Catégorie lue par AbView : un poste est du travail, une absence n'a pas de catégorie."""
+    """Catégorie lue par AbView : celle de la source si elle en donne une, sinon un poste
+    est du travail et une absence n'a pas de catégorie."""
+    if c.categorie is not None:
+        return c.categorie
     return "" if c.journee_entiere else "travail"
 
 
 def titre(c: Creneau, cfg: Config, etat: str = "") -> str:
-    return cfg.titre.format(personne=cfg.personne, poste=_nom(c), code=c.code) + MENTIONS.get(etat, "")
+    nom = _nom(c)
+    base = cfg.titre.format(personne=cfg.personne, poste=nom, code=c.code) if nom else cfg.personne
+    return base + MENTIONS.get(etat, "")
 
 
 def evenement(c: Creneau, cfg: Config, etat: str = "", avant: Creneau | None = None,
@@ -79,6 +92,8 @@ def evenement(c: Creneau, cfg: Config, etat: str = "", avant: Creneau | None = N
         "etat": etat,
         "categorie": categorie(c),
     }
+    if c.poste is not None:
+        props["poste"] = c.poste
     quand = f" le {le:%d/%m}" if le else ""
     entete = {
         "modifie": f"Modifié{quand} — avant : {_libelle(avant)}",
@@ -87,7 +102,7 @@ def evenement(c: Creneau, cfg: Config, etat: str = "", avant: Creneau | None = N
     details = [entete, f"Durée : {c.duree}" if c.duree else "", f"Pause : {c.pause}" if c.pause else ""]
     corps = {
         "summary": titre(c, cfg, etat),
-        "description": "\n".join(d for d in details if d) + "\n\nSynchronisé depuis Silae RH Suite.",
+        "description": "\n".join(d for d in details if d) + "\n\n" + SOURCES.get(cfg.connecteur, SOURCES["silae"]),
         "extendedProperties": {"private": props},
         "reminders": {"useDefault": False},
     }
@@ -164,14 +179,19 @@ class Agenda:
             requete = self.service.events().list_next(requete, reponse)
         return connus
 
-    def appliquer(self, changements: list[Changement], aujourdhui: date | None = None) -> None:
+    def appliquer(self, changements: list[Changement], aujourdhui: date | None = None, exact: bool = False) -> None:
+        """exact : l'agenda recopie la source telle quelle (horaires en dur) ; une
+        modification n'est pas marquée « (modifié) » et une suppression est appliquée."""
         aujourdhui = aujourdhui or datetime.now(ZoneInfo(self.cfg.fuseau)).date()
         for ch in changements:
             if ch.type == "ajout":
                 self.service.events().insert(calendarId=self.cfg.calendar_id, body=evenement(ch.apres, self.cfg)).execute()
             elif ch.type == "modif":
-                self._mettre_a_jour(self._ids[ch.jour], evenement(ch.apres, self.cfg, "modifie", ch.avant, aujourdhui))
-            # Une suppression ne touche pas l'agenda : synchro ne la transmet pas.
+                corps = evenement(ch.apres, self.cfg) if exact else evenement(ch.apres, self.cfg, "modifie", ch.avant, aujourdhui)
+                self._mettre_a_jour(self._ids[ch.jour], corps)
+            elif ch.type == "suppr" and exact:
+                self._supprimer(self._ids[ch.jour])
+            # Sinon une suppression ne touche pas l'agenda : synchro ne la transmet pas.
 
     def restaurer_supprimes(self) -> int:
         """Remet en créneau normal ceux qu'une version précédente avait grisés

@@ -52,6 +52,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def synchro(cfg: Config) -> int:
+    if cfg.connecteur == "horaires":
+        from .horaires import synchro_horaires
+
+        return synchro_horaires(cfg)
+
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
