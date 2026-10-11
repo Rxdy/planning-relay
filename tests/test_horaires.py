@@ -207,6 +207,18 @@ def test_synchro_travail_en_paon_et_poubelle_sans_couleur(tmp_path):
                         ("horaires-caroline", "7"), ("horaires-poubelle", None)}
 
 
+def test_seule_la_poubelle_a_une_notification_la_veille_a_19h(tmp_path):
+    service = FauxService()
+    synchro_horaires(replace(CFG, dossier_etat=str(tmp_path)), service=service, aujourdhui=LUNDI)
+    rappels = {(e["extendedProperties"]["private"][PROP], str(e["reminders"])) for e in service.events().stock.values()}
+    attendu_travail = str({"useDefault": False})
+    assert rappels == {
+        ("horaires-rudy", attendu_travail), ("horaires-lea", attendu_travail),
+        ("horaires-luis", attendu_travail), ("horaires-caroline", attendu_travail),
+        ("horaires-poubelle", str({"useDefault": False, "overrides": [{"method": "popup", "minutes": 300}]})),
+    }
+
+
 def test_synchro_compte_les_echecs(tmp_path):
     cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_horaires=str(tmp_path / "absent.json"))
     assert synchro_horaires(cfg, service=FauxService(), aujourdhui=LUNDI) == 1

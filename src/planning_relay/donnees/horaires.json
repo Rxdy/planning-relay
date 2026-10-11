@@ -143,6 +143,7 @@
     "type": "allday",
     "categorie": "poubelle",
     "couleur": "",
+    "rappels": [300],
     "days": ["thursday"],
     "alternating": [
       { "weekMod2": 0, "type": "Jaune" },

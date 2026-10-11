@@ -104,7 +104,8 @@ def evenement(c: Creneau, cfg: Config, etat: str = "", avant: Creneau | None = N
         "summary": titre(c, cfg, etat),
         "description": "\n".join(d for d in details if d) + "\n\n" + SOURCES.get(cfg.connecteur, SOURCES["silae"]),
         "extendedProperties": {"private": props},
-        "reminders": {"useDefault": False},
+        "reminders": {"useDefault": False, **({"overrides": [
+            {"method": "popup", "minutes": m} for m in cfg.rappels]} if cfg.rappels else {})},
     }
     if etat == "supprime":
         corps["colorId"] = GRIS
