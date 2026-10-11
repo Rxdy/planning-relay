@@ -1,0 +1,153 @@
+[
+  {
+    "name": "Rudy",
+    "type": "fixed",
+    "schedule": { "monday": ["08:30-17:00"], "tuesday": ["08:30-17:00"], "wednesday": ["08:30-17:00"], "thursday": ["08:30-17:00"], "friday": ["08:30-17:00"], "saturday": [], "sunday": [] }
+  },
+  {
+    "name": "Léa",
+    "type": "fixed",
+    "schedule": { "monday": ["08:30-16:30"], "tuesday": ["08:30-16:30"], "wednesday": ["11:15-18:30"], "thursday": ["08:30-16:30"], "friday": ["08:30-16:30"], "saturday": [], "sunday": [] }
+  },
+  {
+    "name": "Luis",
+    "type": "shift",
+    "rotation": [
+      {
+        "week": 1,
+        "shift": "Nuit",
+        "hours": ["21:00-05:00"],
+        "exceptions": { "friday": [], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 2,
+        "shift": "Soir",
+        "hours": ["13:00-21:00"],
+        "exceptions": { "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 3,
+        "shift": "Matin",
+        "hours": ["05:00-13:00"],
+        "exceptions": { "saturday": [], "sunday": [] }
+      }
+    ],
+    "offset": 2
+  },
+  {
+    "name": "Caroline",
+    "type": "shift",
+    "cycleLength": 9,
+    "rotation": [
+      {
+        "week": 1,
+        "shift": "Nuit",
+        "hours": ["21:00-05:00"],
+        "exceptions": { "friday": ["19:00-02:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 2,
+        "shift": "Nuit",
+        "hours": ["21:00-05:00"],
+        "exceptions": { "friday": ["19:00-02:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 3,
+        "shift": "Nuit",
+        "hours": ["21:00-05:00"],
+        "exceptions": { "friday": ["19:00-02:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 4,
+        "shift": "Soir",
+        "hours": ["13:00-21:00"],
+        "exceptions": { "friday": ["12:00-19:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 5,
+        "shift": "Matin",
+        "hours": ["05:00-13:00"],
+        "exceptions": { "friday": ["05:00-12:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 6,
+        "shift": "Soir",
+        "hours": ["13:00-21:00"],
+        "exceptions": { "friday": ["12:00-19:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 7,
+        "shift": "Matin",
+        "hours": ["05:00-13:00"],
+        "exceptions": { "friday": ["05:00-12:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 8,
+        "shift": "Soir",
+        "hours": ["13:00-21:00"],
+        "exceptions": { "friday": ["12:00-19:00"], "saturday": [], "sunday": [] }
+      },
+      {
+        "week": 9,
+        "shift": "Matin",
+        "hours": ["05:00-13:00"],
+        "exceptions": { "friday": ["05:00-12:00"], "saturday": [], "sunday": [] }
+      }
+    ],
+    "weekOverrides": {
+      "2025-50": {
+        "shift": "Soir",
+        "hours": ["13:00-21:00"],
+        "exceptions": { "friday": ["12:00-19:00"], "saturday": [], "sunday": [] }
+      },
+      "2025-51": {
+        "shift": "Matin",
+        "hours": ["05:00-13:00"],
+        "exceptions": { "friday": ["05:00-12:00"], "saturday": [], "sunday": [] }
+      },
+      "2025-52": {
+        "shift": "Soir",
+        "hours": ["13:00-21:00"],
+        "exceptions": { "friday": ["12:00-19:00"], "saturday": [], "sunday": [] }
+      },
+      "2026-2": {
+        "shift": "Soir",
+        "hours": ["13:00-21:00"],
+        "exceptions": { "friday": ["12:00-19:00"], "saturday": [], "sunday": [] }
+      },
+      "2026-3": {
+        "shift": "Matin",
+        "hours": ["05:00-13:00"],
+        "exceptions": { "friday": ["05:00-12:00"], "saturday": [], "sunday": [] }
+      },
+      "2026-4": {
+        "shift": "Nuit",
+        "hours": ["21:00-05:00"],
+        "exceptions": { "friday": ["19:00-02:00"], "saturday": [], "sunday": [] }
+      },
+      "2026-5": {
+        "shift": "Nuit",
+        "hours": ["21:00-05:00"],
+        "exceptions": { "friday": ["19:00-02:00"], "saturday": [], "sunday": [] }
+      },
+      "2026-6": {
+        "shift": "Nuit",
+        "hours": ["21:00-05:00"],
+        "exceptions": { "friday": ["19:00-02:00"], "saturday": [], "sunday": [] }
+      }
+    },
+    "cycleAnchor": { "year": 2026, "week": 13, "position": 0 }
+  },
+  {
+    "name": "Poubelle",
+    "type": "allday",
+    "categorie": "poubelle",
+    "couleur": "",
+    "rappels": [300],
+    "days": ["thursday"],
+    "alternating": [
+      { "weekMod2": 0, "type": "Jaune" },
+      { "weekMod2": 1, "type": "Noire" }
+    ]
+  }
+]
