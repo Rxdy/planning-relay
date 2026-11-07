@@ -43,8 +43,13 @@ HORAIRES = {
     "16h30-17h30": (time(16, 30), time(17, 30)),
     "17h30-19h00": (time(17, 30), time(19, 0)),
 }
-POSTES = {"mercredis": "MJC", "periscolaire": "Périscolaire"}
-CATEGORIE = "periscolaire"  # couleur propre dans AbView ; les mercredis MJC en font partie
+# « Repas » existe aux deux portails avec des horaires différents : celui de l'école est à part
+HORAIRES_ACTIVITE = {"cantine": {"Repas": (time(11, 30), time(13, 30))}}
+POSTES = {"mercredis": "MJC", "periscolaire": "Périscolaire", "cantine": "Cantine"}
+# Une famille = un type de carte dans AbView, avec sa catégorie (donc sa couleur) : le périscolaire et les
+# mercredis MJC ensemble, la cantine (portail école) à part. Le même jour, un enfant a une carte par famille.
+FAMILLES = {"periscolaire": ("mercredis", "periscolaire"), "cantine": ("cantine",)}
+CATEGORIES = {"periscolaire": "periscolaire", "cantine": "cantine"}
 
 
 class SourceInjoignable(Exception):
@@ -84,10 +89,12 @@ def _sans_accents(texte: str) -> str:
     return unicodedata.normalize("NFD", texte).encode("ascii", "ignore").decode()
 
 
-def cle(groupe: str | tuple[str, ...]) -> str:
-    """« kidsync-lyam » pour un enfant, « kidsync-lyam-noah » pour un groupe (ordre alphabétique)."""
+def cle(groupe: str | tuple[str, ...], famille: str = "periscolaire") -> str:
+    """« kidsync-lyam », « kidsync-lyam-noah » (ordre alphabétique) ; la cantine ajoute son préfixe :
+    « kidsync-cantine-lyam-noah ». Le périscolaire garde sa clé d'origine : les cartes déjà publiées restent."""
     noms_ = [groupe] if isinstance(groupe, str) else sorted(groupe)
-    return "kidsync-" + "-".join("-".join(_sans_accents(n).lower().split()) for n in noms_)
+    prefixe = "" if famille == "periscolaire" else f"{famille}-"
+    return "kidsync-" + prefixe + "-".join("-".join(_sans_accents(n).lower().split()) for n in noms_)
 
 
 def noms(groupe: tuple[str, ...]) -> str:
@@ -100,48 +107,54 @@ def enfants(entrees: list[dict]) -> list[str]:
     return sorted({e["enfant"] for e in entrees})
 
 
-def creneaux(entrees: list[dict], enfant: str, debut: date, fin: date) -> list[Creneau]:
-    """Un créneau par jour réservé de cet enfant entre deux dates incluses."""
+def _bornes(activite: str, libelle: str) -> tuple[time, time]:
+    try:
+        return HORAIRES_ACTIVITE.get(activite, {}).get(libelle) or HORAIRES[libelle]
+    except KeyError:
+        raise ValueError(f"Créneau inconnu : {libelle!r} ({activite})") from None
+
+
+def creneaux(entrees: list[dict], enfant: str, debut: date, fin: date, famille: str = "periscolaire") -> list[Creneau]:
+    """Un créneau par jour réservé de cet enfant, pour un type de carte, entre deux dates incluses."""
     par_jour: dict[date, list[dict]] = {}
     for e in entrees:
         jour = date.fromisoformat(e["date"])
-        if e["enfant"] == enfant and e["statut"] == "reserve" and debut <= jour <= fin:
+        if (e["enfant"] == enfant and e["statut"] == "reserve" and e["activite"] in FAMILLES[famille]
+                and debut <= jour <= fin):
             par_jour.setdefault(jour, []).append(e)
     resultat = []
     for jour, es in sorted(par_jour.items()):
-        try:
-            bornes = [HORAIRES[c] for e in es for c in e["creneaux"]]
-        except KeyError as inconnu:
-            raise ValueError(f"Créneau MJC inconnu : {inconnu}") from None
+        bornes = [_bornes(e["activite"], c) for e in es for c in e["creneaux"]]
         postes = " + ".join(dict.fromkeys(POSTES.get(e["activite"], e["activite"]) for e in es))
         # poste="" : le titre est les prénoms seuls (cfg.personne), comme la carte « Garde »
         resultat.append(Creneau(
-            jour=jour, code=postes, poste="", intitule=postes, categorie=CATEGORIE,
+            jour=jour, code=postes, poste="", intitule=postes, categorie=CATEGORIES[famille],
             debut=min(b[0] for b in bornes), fin=max(b[1] for b in bornes),
         ))
     return resultat
 
 
-def creneaux_par_groupe(entrees: list[dict], debut: date, fin: date) -> dict[tuple[str, ...], dict[date, Creneau]]:
-    """{groupe d'enfants: {jour: créneau}}. Le même jour, les enfants au même créneau forment un groupe.
+def creneaux_par_groupe(entrees: list[dict], debut: date, fin: date) -> dict[tuple[str, tuple[str, ...]], dict[date, Creneau]]:
+    """{(famille, groupe d'enfants): {jour: créneau}}. Le même jour, les enfants au même créneau forment un groupe.
 
     Tous les groupes possibles sont présents (même vides) : un groupe qui n'a plus aucun jour doit voir
     ses anciens événements retirés de l'agenda (ex. Noah repasse en écart : la carte « Lyam et Noah »
     laisse la place à la carte « Lyam »)."""
     tous = enfants(entrees)
-    par_enfant = {e: {c.jour: c for c in creneaux(entrees, e, debut, fin)} for e in tous}
-    resultat: dict[tuple[str, ...], dict[date, Creneau]] = {
-        g: {} for r in range(1, len(tous) + 1) for g in combinations(tous, r)}
-    jours = sorted({j for cs in par_enfant.values() for j in cs})
-    for jour in jours:
-        par_signature: dict[tuple, list[str]] = {}
-        for e in tous:
-            c = par_enfant[e].get(jour)
-            if c:
-                par_signature.setdefault((c.code, c.debut, c.fin), []).append(e)
-        for membres in par_signature.values():
-            groupe = tuple(sorted(membres))
-            resultat[groupe][jour] = par_enfant[membres[0]][jour]
+    resultat: dict[tuple[str, tuple[str, ...]], dict[date, Creneau]] = {}
+    for famille in FAMILLES:
+        par_enfant = {e: {c.jour: c for c in creneaux(entrees, e, debut, fin, famille)} for e in tous}
+        for r in range(1, len(tous) + 1):
+            for g in combinations(tous, r):
+                resultat[(famille, g)] = {}
+        for jour in sorted({j for cs in par_enfant.values() for j in cs}):
+            par_signature: dict[tuple, list[str]] = {}
+            for e in tous:
+                c = par_enfant[e].get(jour)
+                if c:
+                    par_signature.setdefault((c.code, c.debut, c.fin), []).append(e)
+            for membres in par_signature.values():
+                resultat[(famille, tuple(sorted(membres)))][jour] = par_enfant[membres[0]][jour]
     return resultat
 
 
@@ -178,8 +191,8 @@ def passer_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) ->
         log.warning("Serveur kidsync injoignable (%s) ; agenda inchangé", e)
         return False
     debut, fin = fenetre(aujourdhui, cfg.semaines)
-    for groupe, lus in creneaux_par_groupe(entrees, debut, fin).items():
-        pcfg = replace(cfg, personne=noms(groupe), cle_synchro=cle(groupe), couleur=None, rappels=())
+    for (famille, groupe), lus in creneaux_par_groupe(entrees, debut, fin).items():
+        pcfg = replace(cfg, personne=noms(groupe), cle_synchro=cle(groupe, famille), couleur=None, rappels=())
         agenda = Agenda(pcfg, service=service)
         service = agenda.service  # une seule connexion pour tout le passage
         passage_kidsync(pcfg, lus, agenda, aujourdhui)
