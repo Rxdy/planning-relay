@@ -280,3 +280,47 @@ def test_serveur_kidsync_injoignable_dans_les_horaires_n_est_pas_un_echec(monkey
     assert synchro_horaires(cfg, service=service, aujourdhui=LUNDI) == 0
     assert Compteur(str(tmp_path)).lire() == 0
     assert "horaires-rudy" in cles(service)   # les horaires sont publiés quand même
+
+
+# --- Cantine : une carte à part, avec sa catégorie ---------------------------------------------
+
+CANT = ["Repas"]
+
+
+def test_cantine_de_11h30_a_13h30_et_le_repas_de_la_mjc_reste_a_12h(tmp_path):
+    cantine = creneaux([e("2026-11-10", "noah", "cantine", CANT)], "noah", AUJOURDHUI, date(2026, 12, 31), "cantine")
+    assert [(c.code, c.debut, c.fin, c.categorie) for c in cantine] == [("Cantine", time(11, 30), time(13, 30), "cantine")]
+    mjc = creneaux([e("2026-11-25", "noah", "mercredis", ["Repas"])], "noah", AUJOURDHUI, date(2026, 12, 31))
+    assert (mjc[0].debut, mjc[0].fin) == (time(12, 0), time(13, 30))   # « Repas » de la MJC, pas celui de l'école
+
+
+def test_cantine_commune_aux_deux_enfants_une_seule_carte(tmp_path):
+    service = FauxService()
+    entrees = [e("2026-11-10", "lyam", "cantine", CANT), e("2026-11-10", "noah", "cantine", CANT)]
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, entrees)))
+    assert synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI) == 0
+    assert titres_par_cle(service) == [("kidsync-cantine-lyam-noah", "Lyam et Noah", "2026-11-10T11:30")]
+    assert {ev["extendedProperties"]["private"]["categorie"] for ev in service.events().stock.values()} == {"cantine"}
+
+
+def test_cantine_et_perisco_le_meme_jour_sont_deux_cartes(tmp_path):
+    service = FauxService()
+    entrees = [e("2026-12-07", "lyam", "cantine", CANT), e("2026-12-07", "noah", "cantine", CANT),
+               e("2026-12-07", "lyam", "periscolaire", PERI), e("2026-12-07", "noah", "periscolaire", PERI)]
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, entrees)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
+    assert titres_par_cle(service) == [("kidsync-cantine-lyam-noah", "Lyam et Noah", "2026-12-07T11:30"),
+                                       ("kidsync-lyam-noah", "Lyam et Noah", "2026-12-07T16:30")]
+
+
+def test_cantine_d_un_seul_enfant_et_non_inscrite_pas_publiee(tmp_path):
+    service = FauxService()
+    entrees = [e("2026-11-10", "lyam", "cantine", CANT), e("2026-11-10", "noah", "cantine", CANT, "a_inscrire")]
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, entrees)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
+    assert titres_par_cle(service) == [("kidsync-cantine-lyam", "Lyam", "2026-11-10T11:30")]
+
+
+def test_cle_de_la_cantine():
+    assert cle(("lyam", "noah"), "cantine") == "kidsync-cantine-lyam-noah"
+    assert cle(("lyam", "noah")) == "kidsync-lyam-noah"   # le périscolaire garde sa clé d'origine : pas de migration
