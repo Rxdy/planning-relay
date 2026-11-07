@@ -17,7 +17,7 @@ Calcul repris d'AbView (calendarStore.ts) pour ne rien changer à l'affichage :
 La couleur Google Agenda est EVENT_COLOR_ID (Paon, le travail) ; une personne peut
 la remplacer par son champ `couleur` ("" : pas de couleur, ex. la poubelle).
 Pas de notification, sauf `rappels` (minutes avant le début ; pour une journée
-entière, avant minuit : 300 = la veille à 19h, pour sortir la poubelle).
+entière, avant minuit). La poubelle n'en a pas : l'événement est déjà la veille du ramassage.
 Les semaines sont numérotées à l'ISO, combinées avec l'année civile, comme dans AbView.
 """
 
