@@ -56,6 +56,10 @@ def synchro(cfg: Config) -> int:
         from .horaires import synchro_horaires
 
         return synchro_horaires(cfg)
+    if cfg.connecteur == "kidsync":
+        from .kidsync import synchro_kidsync
+
+        return synchro_kidsync(cfg)
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
