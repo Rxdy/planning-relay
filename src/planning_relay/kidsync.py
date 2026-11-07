@@ -6,10 +6,11 @@ Ici, seules les inscriptions `reserve` vont dans l'agenda : un écart ou un jour
 n'est pas une inscription. L'agenda est la copie exacte du fichier (comme `horaires`) :
 une inscription qui repasse en écart est retirée, et aucun mail n'est envoyé.
 
-Chaque enfant a sa propre clé de synchro (`planning_relay=kidsync-lyam`) et son titre
-« Lyam — MJC » (mercredis) ou « Lyam — Périscolaire ». Au plus un événement par enfant et par jour :
-si deux activités tombent le même jour, elles sont réunies (heure de début la plus tôt,
-heure de fin la plus tard).
+Une carte commune par groupe d'enfants inscrits pareil le même jour : « Lyam et Noah », comme la carte
+« Garde » (le libellé « Périscolaire » vient de la catégorie, AbView l'affiche au-dessus). Si un seul
+est inscrit, ou si leurs horaires diffèrent, chacun a sa carte (« Lyam »). Chaque groupe a sa clé de
+synchro (`planning_relay=kidsync-lyam-noah`, `kidsync-lyam`…). Au plus un événement par enfant et par
+jour : si deux activités tombent le même jour, elles sont réunies (début le plus tôt, fin la plus tard).
 
 Source : le serveur de kidsync (KIDSYNC_URL + KIDSYNC_TOKEN), que le conteneur interroge à chaque
 passage, ou un fichier local (KIDSYNC_FILE). Si le serveur est injoignable, le passage ne change rien
@@ -21,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import unicodedata
+from itertools import combinations
 from dataclasses import replace
 from datetime import date, datetime, time
 from pathlib import Path
@@ -78,9 +80,20 @@ def lire(cfg: Config) -> list[dict]:
     return _valider(r.json(), "KIDSYNC_URL")
 
 
-def cle(enfant: str) -> str:
-    sans_accents = unicodedata.normalize("NFD", enfant).encode("ascii", "ignore").decode()
-    return "kidsync-" + "-".join(sans_accents.lower().split())
+def _sans_accents(texte: str) -> str:
+    return unicodedata.normalize("NFD", texte).encode("ascii", "ignore").decode()
+
+
+def cle(groupe: str | tuple[str, ...]) -> str:
+    """« kidsync-lyam » pour un enfant, « kidsync-lyam-noah » pour un groupe (ordre alphabétique)."""
+    noms_ = [groupe] if isinstance(groupe, str) else sorted(groupe)
+    return "kidsync-" + "-".join("-".join(_sans_accents(n).lower().split()) for n in noms_)
+
+
+def noms(groupe: tuple[str, ...]) -> str:
+    """« Lyam », « Lyam et Noah », « Lea, Lyam et Noah »."""
+    n = [x.capitalize() for x in sorted(groupe)]
+    return n[0] if len(n) == 1 else ", ".join(n[:-1]) + " et " + n[-1]
 
 
 def enfants(entrees: list[dict]) -> list[str]:
@@ -101,10 +114,34 @@ def creneaux(entrees: list[dict], enfant: str, debut: date, fin: date) -> list[C
         except KeyError as inconnu:
             raise ValueError(f"Créneau MJC inconnu : {inconnu}") from None
         postes = " + ".join(dict.fromkeys(POSTES.get(e["activite"], e["activite"]) for e in es))
+        # poste="" : le titre est les prénoms seuls (cfg.personne), comme la carte « Garde »
         resultat.append(Creneau(
-            jour=jour, code=postes, poste=postes, categorie=CATEGORIE,
+            jour=jour, code=postes, poste="", intitule=postes, categorie=CATEGORIE,
             debut=min(b[0] for b in bornes), fin=max(b[1] for b in bornes),
         ))
+    return resultat
+
+
+def creneaux_par_groupe(entrees: list[dict], debut: date, fin: date) -> dict[tuple[str, ...], dict[date, Creneau]]:
+    """{groupe d'enfants: {jour: créneau}}. Le même jour, les enfants au même créneau forment un groupe.
+
+    Tous les groupes possibles sont présents (même vides) : un groupe qui n'a plus aucun jour doit voir
+    ses anciens événements retirés de l'agenda (ex. Noah repasse en écart : la carte « Lyam et Noah »
+    laisse la place à la carte « Lyam »)."""
+    tous = enfants(entrees)
+    par_enfant = {e: {c.jour: c for c in creneaux(entrees, e, debut, fin)} for e in tous}
+    resultat: dict[tuple[str, ...], dict[date, Creneau]] = {
+        g: {} for r in range(1, len(tous) + 1) for g in combinations(tous, r)}
+    jours = sorted({j for cs in par_enfant.values() for j in cs})
+    for jour in jours:
+        par_signature: dict[tuple, list[str]] = {}
+        for e in tous:
+            c = par_enfant[e].get(jour)
+            if c:
+                par_signature.setdefault((c.code, c.debut, c.fin), []).append(e)
+        for membres in par_signature.values():
+            groupe = tuple(sorted(membres))
+            resultat[groupe][jour] = par_enfant[membres[0]][jour]
     return resultat
 
 
@@ -128,7 +165,7 @@ def passage_kidsync(cfg: Config, lus_par_jour: dict[date, Creneau], agenda, aujo
 
 
 def passer_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) -> bool:
-    """Un passage pour tous les enfants du fichier. Lève en cas d'erreur (à l'appelant de la compter).
+    """Un passage pour tous les groupes d'enfants du fichier. Lève en cas d'erreur (à l'appelant de la compter).
 
     Rend False quand le serveur de kidsync est injoignable : l'agenda n'est alors pas touché."""
     from .agenda import Agenda
@@ -141,11 +178,10 @@ def passer_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) ->
         log.warning("Serveur kidsync injoignable (%s) ; agenda inchangé", e)
         return False
     debut, fin = fenetre(aujourdhui, cfg.semaines)
-    for enfant in enfants(entrees):
-        pcfg = replace(cfg, personne=enfant.capitalize(), cle_synchro=cle(enfant), couleur=None, rappels=())
+    for groupe, lus in creneaux_par_groupe(entrees, debut, fin).items():
+        pcfg = replace(cfg, personne=noms(groupe), cle_synchro=cle(groupe), couleur=None, rappels=())
         agenda = Agenda(pcfg, service=service)
         service = agenda.service  # une seule connexion pour tout le passage
-        lus = {c.jour: c for c in creneaux(entrees, enfant, debut, fin)}
         passage_kidsync(pcfg, lus, agenda, aujourdhui)
     return True
 
