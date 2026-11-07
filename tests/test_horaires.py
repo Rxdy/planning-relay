@@ -34,8 +34,8 @@ def test_fichier_livre_les_quatre_personnes():
 
 def test_lea_horaires_fixes_mercredi_different():
     assert semaine("Léa") == {
-        "lun": ("", "08:30-16:30"), "mar": ("", "08:30-16:30"), "mer": ("", "11:15-18:30"),
-        "jeu": ("", "08:30-16:30"), "ven": ("", "08:30-16:30"), "sam": None, "dim": None,
+        "lun": ("", "08:30-18:30"), "mar": ("", "08:30-18:30"), "mer": ("", "08:30-16:30"),
+        "jeu": ("", "08:30-18:30"), "ven": ("", "08:30-18:30"), "sam": None, "dim": None,
     }
 
 

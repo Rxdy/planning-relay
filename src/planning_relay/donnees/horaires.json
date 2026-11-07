@@ -7,7 +7,7 @@
   {
     "name": "Léa",
     "type": "fixed",
-    "schedule": { "monday": ["08:30-16:30"], "tuesday": ["08:30-16:30"], "wednesday": ["11:15-18:30"], "thursday": ["08:30-16:30"], "friday": ["08:30-16:30"], "saturday": [], "sunday": [] }
+    "schedule": { "monday": ["08:30-18:30"], "tuesday": ["08:30-18:30"], "wednesday": ["08:30-16:30"], "thursday": ["08:30-18:30"], "friday": ["08:30-18:30"], "saturday": [], "sunday": [] }
   },
   {
     "name": "Luis",
