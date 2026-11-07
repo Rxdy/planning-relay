@@ -35,6 +35,7 @@ Le conteneur passe en `unhealthy` après 3 échecs d'affilée, ou si aucun passa
 | `SKIP_CODES` | Codes à ne pas reporter (défaut `R,RF` : un jour vide est un repos) |
 | `EVENT_COLOR_ID` | Couleur Google Agenda (1 à 11) |
 | `DRY_RUN` | `1` : ne rien écrire ni envoyer |
+| `KIDSYNC_FILE` | `CONNECTOR=kidsync` : fichier `inscriptions.json` écrit par kidsync |
 
 ## Horaires en dur
 
@@ -54,3 +55,12 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 ```
 
 `CONNECTOR=fichier PLANNING_FILE=exemples/planning.json DRY_RUN=1` fait tourner un passage sans la plateforme.
+
+### Inscriptions des enfants (`CONNECTOR=kidsync`)
+
+kidsync (dépôt `Rxdy/kidsync`) relève le planning du portail MJC et écrit `data/inscriptions.json` : une entrée par date, enfant et activité, avec un statut `prevu`, `reserve` ou `ecart`. Le connecteur `kidsync` ([src/planning_relay/kidsync.py](src/planning_relay/kidsync.py)) recopie **uniquement les inscriptions `reserve`** dans l'agenda, sur le modèle de `horaires` : un passage par enfant, une clé par enfant (`planning_relay=kidsync-lyam`), aucun mail, agenda identique au fichier (une inscription qui repasse en écart est retirée).
+
+- Titres « Lyam — MJC » (mercredis, de 7h30 à 19h) et « Lyam — Périscolaire » (soirs, de 16h30 à 19h). Au plus un événement par enfant et par jour.
+- Catégorie `enfants`, sans couleur ni notification. **AbView doit savoir afficher cette catégorie** (il ne connaît aujourd'hui que `travail` et `poubelle`).
+- Le fichier doit être lisible par le conteneur (`KIDSYNC_FILE`). Son acheminement depuis le poste où tourne kidsync n'est pas géré : à décider avant le déploiement.
+- Essai sans rien écrire : `CONNECTOR=kidsync KIDSYNC_FILE=…/inscriptions.json DRY_RUN=1`.
