@@ -61,8 +61,8 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 kidsync (dépôt `Rxdy/kidsync`) relève le planning du portail MJC et le sert en lecture seule (`inscriptions.json` : une entrée par date, enfant et activité, statut `prevu`, `reserve`, `ecart` ou `a_inscrire`). **Le conteneur des horaires** (`CONNECTOR=horaires`) y va chercher les inscriptions dans le même passage que les horaires dès que `KIDSYNC_URL` est défini : pas de conteneur à part, un seul compteur de santé.
 
-- Il recopie **uniquement les inscriptions `reserve`**, comme `horaires` : une clé par enfant (`planning_relay=kidsync-lyam`), aucun mail, agenda identique à la source (une inscription qui repasse en écart est retirée).
-- Titres « Lyam — MJC » (mercredis, de 7h30 à 19h) et « Lyam — Périscolaire » (soirs, de 16h30 à 19h). Au plus un événement par enfant et par jour. Fenêtre : celle du conteneur (`WEEKS`, deux semaines pour les horaires).
+- Il recopie **uniquement les inscriptions `reserve`**, comme `horaires` : une clé par groupe d'enfants (`planning_relay=kidsync-lyam-noah`), aucun mail, agenda identique à la source (une inscription qui repasse en écart est retirée).
+- **Une carte commune** pour les enfants inscrits pareil le même jour : titre « Lyam et Noah », comme la carte « Garde » ; le libellé « Périscolaire » vient de la catégorie (AbView l'affiche au-dessus). Mercredis MJC de 7h30 à 19h, soirs de 16h30 à 19h. Si un seul enfant est inscrit, ou si leurs horaires diffèrent, chacun a sa carte (« Lyam »). Clés : `kidsync-lyam-noah`, `kidsync-lyam`, `kidsync-noah`. Fenêtre : celle du conteneur (`WEEKS`, deux semaines pour les horaires).
 - Catégorie `periscolaire` (mercredis MJC compris), sans couleur Google ni notification. AbView doit la connaître pour la colorer.
 - Variables : `KIDSYNC_URL` (adresse du serveur de kidsync) et `KIDSYNC_TOKEN` (son jeton), à mettre dans le `.env` du Pi. `KIDSYNC_FILE` lit un fichier local à la place.
 - Si le serveur de kidsync est injoignable (le poste est éteint), le passage ne change rien aux inscriptions et n'est pas compté comme un échec : les horaires sont publiés comme d'habitude. Un jeton refusé, lui, est un échec.
