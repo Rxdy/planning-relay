@@ -11,8 +11,9 @@ Chaque enfant a sa propre clé de synchro (`planning_relay=kidsync-lyam`) et son
 si deux activités tombent le même jour, elles sont réunies (heure de début la plus tôt,
 heure de fin la plus tard).
 
-Le fichier doit être lisible par le conteneur (KIDSYNC_FILE) : son acheminement depuis le poste
-où tourne kidsync n'est pas géré ici.
+Source : le serveur de kidsync (KIDSYNC_URL + KIDSYNC_TOKEN), que le conteneur interroge à chaque
+passage, ou un fichier local (KIDSYNC_FILE). Si le serveur est injoignable, le passage ne change rien
+et n'est pas compté comme un échec.
 """
 
 from __future__ import annotations
@@ -41,17 +42,40 @@ HORAIRES = {
     "17h30-19h00": (time(17, 30), time(19, 0)),
 }
 POSTES = {"mercredis": "MJC", "periscolaire": "Périscolaire"}
-CATEGORIE = "enfants"
+CATEGORIE = "periscolaire"  # couleur propre dans AbView ; les mercredis MJC en font partie
+
+
+class SourceInjoignable(Exception):
+    """Le serveur de kidsync ne répond pas (le poste est éteint, par exemple)."""
+
+
+def _valider(brut, origine: str) -> list[dict]:
+    entrees = list(brut.values()) if isinstance(brut, dict) else brut
+    for e in entrees:
+        if not {"date", "enfant", "activite", "creneaux", "statut"} <= e.keys():
+            raise ValueError(f"Entrée kidsync invalide ({origine}) : {sorted(e)}")
+    return entrees
 
 
 def charger(chemin: str | Path) -> list[dict]:
     """Les entrées du fichier de kidsync ({clé: entrée} ou liste d'entrées)."""
-    brut = json.loads(Path(chemin).read_text(encoding="utf-8"))
-    entrees = list(brut.values()) if isinstance(brut, dict) else brut
-    for e in entrees:
-        if not {"date", "enfant", "activite", "creneaux", "statut"} <= e.keys():
-            raise ValueError(f"Entrée kidsync invalide dans {chemin} : {sorted(e)}")
-    return entrees
+    return _valider(json.loads(Path(chemin).read_text(encoding="utf-8")), str(chemin))
+
+
+def lire(cfg: Config) -> list[dict]:
+    """Va chercher les inscriptions : sur le serveur de kidsync si KIDSYNC_URL est donné, sinon dans le fichier."""
+    if not cfg.url_kidsync:
+        return charger(cfg.fichier_kidsync)
+    import httpx
+
+    try:
+        r = httpx.get(cfg.url_kidsync, headers={"Authorization": f"Bearer {cfg.jeton_kidsync}"}, timeout=15)
+    except httpx.TransportError as e:
+        raise SourceInjoignable(type(e).__name__) from None
+    if r.status_code in (401, 403):
+        raise PermissionError("Jeton kidsync refusé")  # une vraie panne de réglage : comptée comme échec
+    r.raise_for_status()
+    return _valider(r.json(), "KIDSYNC_URL")
 
 
 def cle(enfant: str) -> str:
@@ -113,7 +137,12 @@ def synchro_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) -
     aujourdhui = aujourdhui or maintenant.date()
     compteur = Compteur(cfg.dossier_etat)
     try:
-        entrees = charger(cfg.fichier_kidsync)
+        try:
+            entrees = lire(cfg)
+        except SourceInjoignable as e:
+            # Pas une panne : le poste de kidsync peut être éteint. L'agenda garde ses derniers événements.
+            log.warning("Serveur kidsync injoignable (%s) ; agenda inchangé", e)
+            return 0
         debut, fin = fenetre(aujourdhui, cfg.semaines)
         for enfant in enfants(entrees):
             pcfg = replace(cfg, personne=enfant.capitalize(), cle_synchro=cle(enfant), couleur=None, rappels=())

@@ -8,7 +8,7 @@ import pytest
 
 from planning_relay.agenda import PROP
 from planning_relay.config import Config
-from planning_relay.kidsync import charger, cle, creneaux, synchro_kidsync
+from planning_relay.kidsync import SourceInjoignable, charger, cle, creneaux, lire, synchro_kidsync
 
 from test_agenda import FauxService
 
@@ -41,7 +41,7 @@ def evenements(service):
 
 def test_mercredi_un_creneau_de_7h30_a_19h():
     (c,) = creneaux(ENTREES, "lyam", date(2026, 11, 9), date(2026, 12, 31))[:1]
-    assert (c.jour, c.poste, c.debut, c.fin, c.categorie) == (date(2026, 11, 25), "MJC", time(7, 30), time(19, 0), "enfants")
+    assert (c.jour, c.poste, c.debut, c.fin, c.categorie) == (date(2026, 11, 25), "MJC", time(7, 30), time(19, 0), "periscolaire")
 
 
 def test_periscolaire_de_16h30_a_19h():
@@ -90,7 +90,7 @@ def test_synchro_un_enfant_a_sa_cle_et_son_titre(tmp_path):
         ("kidsync-lyam", "Lyam — MJC", "2026-11-25T07:30"), ("kidsync-lyam", "Lyam — Périscolaire", "2026-12-07T16:30"),
         ("kidsync-noah", "Noah — MJC", "2026-11-25T07:30"), ("kidsync-noah", "Noah — Périscolaire", "2026-12-07T16:30"),
     ]
-    assert {ev["extendedProperties"]["private"]["categorie"] for ev in evs} == {"enfants"}
+    assert {ev["extendedProperties"]["private"]["categorie"] for ev in evs} == {"periscolaire"}
     assert all("colorId" not in ev for ev in evs)
 
 
@@ -127,3 +127,61 @@ def test_synchro_compte_les_echecs(tmp_path):
     from planning_relay.alerte import Compteur
 
     assert Compteur(str(tmp_path)).lire() == 1
+
+
+# --- Récupération par le réseau ----------------------------------------------------
+
+class Reponse:
+    def __init__(self, code=200, corps=None):
+        self.status_code, self._corps = code, corps
+
+    def json(self):
+        return self._corps
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(self.status_code)
+
+
+def avec_url(tmp_path, **kw):
+    return replace(CFG, dossier_etat=str(tmp_path), url_kidsync="http://poste:8765/inscriptions.json", jeton_kidsync="s3cret", **kw)
+
+
+def test_lire_par_url_envoie_le_jeton(monkeypatch, tmp_path):
+    vu = {}
+
+    def get(url, headers, timeout):
+        vu.update(url=url, auth=headers["Authorization"])
+        return Reponse(corps={f"{x['date']}|{x['enfant']}": x for x in ENTREES})
+
+    monkeypatch.setattr("httpx.get", get)
+    assert len(lire(avec_url(tmp_path))) == len(ENTREES)
+    assert vu == {"url": "http://poste:8765/inscriptions.json", "auth": "Bearer s3cret"}
+
+
+def test_serveur_injoignable_ne_change_rien_et_ne_compte_pas_d_echec(monkeypatch, tmp_path):
+    import httpx
+
+    def get(*a, **k):
+        raise httpx.ConnectError("hors ligne")
+
+    monkeypatch.setattr("httpx.get", get)
+    service = FauxService()
+    assert synchro_kidsync(avec_url(tmp_path), service=service, aujourdhui=AUJOURDHUI) == 0
+    assert service.events().stock == {}
+    from planning_relay.alerte import Compteur
+
+    assert Compteur(str(tmp_path)).lire() == 0
+
+
+def test_lire_par_url_leve_source_injoignable(monkeypatch, tmp_path):
+    import httpx
+
+    monkeypatch.setattr("httpx.get", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectTimeout("lent")))
+    with pytest.raises(SourceInjoignable):
+        lire(avec_url(tmp_path))
+
+
+def test_jeton_refuse_est_un_echec_compte(monkeypatch, tmp_path):
+    monkeypatch.setattr("httpx.get", lambda *a, **k: Reponse(401))
+    assert synchro_kidsync(avec_url(tmp_path), service=FauxService(), aujourdhui=AUJOURDHUI) == 1

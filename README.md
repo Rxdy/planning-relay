@@ -35,7 +35,8 @@ Le conteneur passe en `unhealthy` après 3 échecs d'affilée, ou si aucun passa
 | `SKIP_CODES` | Codes à ne pas reporter (défaut `R,RF` : un jour vide est un repos) |
 | `EVENT_COLOR_ID` | Couleur Google Agenda (1 à 11) |
 | `DRY_RUN` | `1` : ne rien écrire ni envoyer |
-| `KIDSYNC_FILE` | `CONNECTOR=kidsync` : fichier `inscriptions.json` écrit par kidsync |
+| `KIDSYNC_URL`, `KIDSYNC_TOKEN` | `CONNECTOR=kidsync` : adresse du serveur de kidsync et son jeton (le conteneur va chercher `inscriptions.json` à chaque passage) |
+| `KIDSYNC_FILE` | `CONNECTOR=kidsync` : à la place de l'URL, un fichier local `inscriptions.json` |
 
 ## Horaires en dur
 
@@ -61,6 +62,6 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 kidsync (dépôt `Rxdy/kidsync`) relève le planning du portail MJC et écrit `data/inscriptions.json` : une entrée par date, enfant et activité, avec un statut `prevu`, `reserve` ou `ecart`. Le connecteur `kidsync` ([src/planning_relay/kidsync.py](src/planning_relay/kidsync.py)) recopie **uniquement les inscriptions `reserve`** dans l'agenda, sur le modèle de `horaires` : un passage par enfant, une clé par enfant (`planning_relay=kidsync-lyam`), aucun mail, agenda identique au fichier (une inscription qui repasse en écart est retirée).
 
 - Titres « Lyam — MJC » (mercredis, de 7h30 à 19h) et « Lyam — Périscolaire » (soirs, de 16h30 à 19h). Au plus un événement par enfant et par jour.
-- Catégorie `enfants`, sans couleur ni notification. **AbView doit savoir afficher cette catégorie** (il ne connaît aujourd'hui que `travail` et `poubelle`).
-- Le fichier doit être lisible par le conteneur (`KIDSYNC_FILE`). Son acheminement depuis le poste où tourne kidsync n'est pas géré : à décider avant le déploiement.
+- Catégorie `periscolaire` (mercredis MJC compris), sans couleur Google ni notification. **AbView doit connaître cette catégorie pour lui donner sa couleur** (il ne connaît aujourd'hui que `travail`, `poubelle`, etc.).
+- Le conteneur va chercher le fichier : kidsync le sert en lecture seule (`python -m kidsync.serveur`, jeton obligatoire). Si le poste de kidsync est éteint, le passage ne change rien et n'est pas compté comme un échec. Un jeton refusé, lui, est un échec.
 - Essai sans rien écrire : `CONNECTOR=kidsync KIDSYNC_FILE=…/inscriptions.json DRY_RUN=1`.
