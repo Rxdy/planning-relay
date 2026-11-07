@@ -185,3 +185,54 @@ def test_lire_par_url_leve_source_injoignable(monkeypatch, tmp_path):
 def test_jeton_refuse_est_un_echec_compte(monkeypatch, tmp_path):
     monkeypatch.setattr("httpx.get", lambda *a, **k: Reponse(401))
     assert synchro_kidsync(avec_url(tmp_path), service=FauxService(), aujourdhui=AUJOURDHUI) == 1
+
+
+# --- Dans le conteneur des horaires : un seul passage, un seul compteur de santé -----------------
+
+HORAIRES = Config.depuis_env({"CONNECTOR": "horaires", "CALENDAR_ID": "affichage@group", "WEEKS": "2"})
+LUNDI = date(2026, 11, 9)
+
+
+def cles(service):
+    return {e["extendedProperties"]["private"][PROP] for e in service.events().stock.values()}
+
+
+def test_le_passage_des_horaires_publie_aussi_les_inscriptions(tmp_path):
+    from planning_relay.horaires import synchro_horaires
+
+    service = FauxService()
+    cfg = replace(HORAIRES, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path)), semaines=8)
+    assert synchro_horaires(cfg, service=service, aujourdhui=LUNDI) == 0
+    assert {"horaires-rudy", "horaires-lea", "kidsync-lyam", "kidsync-noah"} <= cles(service)
+
+
+def test_sans_kidsync_le_passage_des_horaires_ne_change_pas(tmp_path):
+    from planning_relay.horaires import synchro_horaires
+
+    service = FauxService()
+    assert synchro_horaires(replace(HORAIRES, dossier_etat=str(tmp_path)), service=service, aujourdhui=LUNDI) == 0
+    assert not any(c.startswith("kidsync-") for c in cles(service))
+
+
+def test_echec_kidsync_dans_les_horaires_est_compte_et_ne_masque_rien(tmp_path):
+    from planning_relay.alerte import Compteur
+    from planning_relay.horaires import synchro_horaires
+
+    cfg = replace(HORAIRES, dossier_etat=str(tmp_path), fichier_kidsync=str(tmp_path / "absent.json"))
+    assert synchro_horaires(cfg, service=FauxService(), aujourdhui=LUNDI) == 1
+    assert synchro_horaires(cfg, service=FauxService(), aujourdhui=LUNDI) == 1
+    assert Compteur(str(tmp_path)).lire() == 2   # d'affilée : un succès des horaires ne remet pas à zéro
+
+
+def test_serveur_kidsync_injoignable_dans_les_horaires_n_est_pas_un_echec(monkeypatch, tmp_path):
+    import httpx
+
+    from planning_relay.alerte import Compteur
+    from planning_relay.horaires import synchro_horaires
+
+    monkeypatch.setattr("httpx.get", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError("éteint")))
+    service = FauxService()
+    cfg = replace(HORAIRES, dossier_etat=str(tmp_path), url_kidsync="http://poste:8765/inscriptions.json", jeton_kidsync="x")
+    assert synchro_horaires(cfg, service=service, aujourdhui=LUNDI) == 0
+    assert Compteur(str(tmp_path)).lire() == 0
+    assert "horaires-rudy" in cles(service)   # les horaires sont publiés quand même

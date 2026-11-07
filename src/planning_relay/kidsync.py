@@ -127,29 +127,40 @@ def passage_kidsync(cfg: Config, lus_par_jour: dict[date, Creneau], agenda, aujo
     return changements
 
 
-def synchro_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) -> int:
-    """Un passage pour tous les enfants du fichier. Pas de mail : la santé du conteneur
-    (compteur d'échecs) suffit à signaler une panne."""
+def passer_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) -> bool:
+    """Un passage pour tous les enfants du fichier. Lève en cas d'erreur (à l'appelant de la compter).
+
+    Rend False quand le serveur de kidsync est injoignable : l'agenda n'est alors pas touché."""
     from .agenda import Agenda
+
+    aujourdhui = aujourdhui or datetime.now(ZoneInfo(cfg.fuseau)).date()
+    try:
+        entrees = lire(cfg)
+    except SourceInjoignable as e:
+        # Pas une panne : le poste de kidsync peut être éteint. L'agenda garde ses derniers événements.
+        log.warning("Serveur kidsync injoignable (%s) ; agenda inchangé", e)
+        return False
+    debut, fin = fenetre(aujourdhui, cfg.semaines)
+    for enfant in enfants(entrees):
+        pcfg = replace(cfg, personne=enfant.capitalize(), cle_synchro=cle(enfant), couleur=None, rappels=())
+        agenda = Agenda(pcfg, service=service)
+        service = agenda.service  # une seule connexion pour tout le passage
+        lus = {c.jour: c for c in creneaux(entrees, enfant, debut, fin)}
+        passage_kidsync(pcfg, lus, agenda, aujourdhui)
+    return True
+
+
+def synchro_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) -> int:
+    """CONNECTOR=kidsync, seul : un conteneur qui ne fait que les inscriptions. Pas de mail : la santé
+    du conteneur (compteur d'échecs) suffit à signaler une panne. Le plus simple est de ne pas en
+    faire un conteneur à part : avec CONNECTOR=horaires et KIDSYNC_URL, le passage des horaires
+    fait aussi celui-ci (voir horaires.synchro_horaires)."""
     from .alerte import Compteur
 
     maintenant = datetime.now(ZoneInfo(cfg.fuseau))
-    aujourdhui = aujourdhui or maintenant.date()
     compteur = Compteur(cfg.dossier_etat)
     try:
-        try:
-            entrees = lire(cfg)
-        except SourceInjoignable as e:
-            # Pas une panne : le poste de kidsync peut être éteint. L'agenda garde ses derniers événements.
-            log.warning("Serveur kidsync injoignable (%s) ; agenda inchangé", e)
-            return 0
-        debut, fin = fenetre(aujourdhui, cfg.semaines)
-        for enfant in enfants(entrees):
-            pcfg = replace(cfg, personne=enfant.capitalize(), cle_synchro=cle(enfant), couleur=None, rappels=())
-            agenda = Agenda(pcfg, service=service)
-            service = agenda.service  # une seule connexion pour tout le passage
-            lus = {c.jour: c for c in creneaux(entrees, enfant, debut, fin)}
-            passage_kidsync(pcfg, lus, agenda, aujourdhui)
+        passer_kidsync(cfg, service, aujourdhui)
     except Exception as e:
         n = compteur.echec(maintenant)
         # Le type seul : le texte brut d'une erreur peut contenir des données.

@@ -35,8 +35,8 @@ Le conteneur passe en `unhealthy` après 3 échecs d'affilée, ou si aucun passa
 | `SKIP_CODES` | Codes à ne pas reporter (défaut `R,RF` : un jour vide est un repos) |
 | `EVENT_COLOR_ID` | Couleur Google Agenda (1 à 11) |
 | `DRY_RUN` | `1` : ne rien écrire ni envoyer |
-| `KIDSYNC_URL`, `KIDSYNC_TOKEN` | `CONNECTOR=kidsync` : adresse du serveur de kidsync et son jeton (le conteneur va chercher `inscriptions.json` à chaque passage) |
-| `KIDSYNC_FILE` | `CONNECTOR=kidsync` : à la place de l'URL, un fichier local `inscriptions.json` |
+| `KIDSYNC_URL`, `KIDSYNC_TOKEN` | Adresse du serveur de kidsync et son jeton : le conteneur `horaires` y va chercher les inscriptions des enfants à chaque passage |
+| `KIDSYNC_FILE` | À la place de l'URL, un fichier local `inscriptions.json` |
 
 ## Horaires en dur
 
@@ -57,11 +57,14 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 `CONNECTOR=fichier PLANNING_FILE=exemples/planning.json DRY_RUN=1` fait tourner un passage sans la plateforme.
 
-### Inscriptions des enfants (`CONNECTOR=kidsync`)
+### Inscriptions des enfants (kidsync)
 
-kidsync (dépôt `Rxdy/kidsync`) relève le planning du portail MJC et écrit `data/inscriptions.json` : une entrée par date, enfant et activité, avec un statut `prevu`, `reserve` ou `ecart`. Le connecteur `kidsync` ([src/planning_relay/kidsync.py](src/planning_relay/kidsync.py)) recopie **uniquement les inscriptions `reserve`** dans l'agenda, sur le modèle de `horaires` : un passage par enfant, une clé par enfant (`planning_relay=kidsync-lyam`), aucun mail, agenda identique au fichier (une inscription qui repasse en écart est retirée).
+kidsync (dépôt `Rxdy/kidsync`) relève le planning du portail MJC et le sert en lecture seule (`inscriptions.json` : une entrée par date, enfant et activité, statut `prevu`, `reserve`, `ecart` ou `a_inscrire`). **Le conteneur des horaires** (`CONNECTOR=horaires`) y va chercher les inscriptions dans le même passage que les horaires dès que `KIDSYNC_URL` est défini : pas de conteneur à part, un seul compteur de santé.
 
-- Titres « Lyam — MJC » (mercredis, de 7h30 à 19h) et « Lyam — Périscolaire » (soirs, de 16h30 à 19h). Au plus un événement par enfant et par jour.
-- Catégorie `periscolaire` (mercredis MJC compris), sans couleur Google ni notification. **AbView doit connaître cette catégorie pour lui donner sa couleur** (il ne connaît aujourd'hui que `travail`, `poubelle`, etc.).
-- Le conteneur va chercher le fichier : kidsync le sert en lecture seule (`python -m kidsync.serveur`, jeton obligatoire). Si le poste de kidsync est éteint, le passage ne change rien et n'est pas compté comme un échec. Un jeton refusé, lui, est un échec.
-- Essai sans rien écrire : `CONNECTOR=kidsync KIDSYNC_FILE=…/inscriptions.json DRY_RUN=1`.
+- Il recopie **uniquement les inscriptions `reserve`**, comme `horaires` : une clé par enfant (`planning_relay=kidsync-lyam`), aucun mail, agenda identique à la source (une inscription qui repasse en écart est retirée).
+- Titres « Lyam — MJC » (mercredis, de 7h30 à 19h) et « Lyam — Périscolaire » (soirs, de 16h30 à 19h). Au plus un événement par enfant et par jour. Fenêtre : celle du conteneur (`WEEKS`, deux semaines pour les horaires).
+- Catégorie `periscolaire` (mercredis MJC compris), sans couleur Google ni notification. AbView doit la connaître pour la colorer.
+- Variables : `KIDSYNC_URL` (adresse du serveur de kidsync) et `KIDSYNC_TOKEN` (son jeton), à mettre dans le `.env` du Pi. `KIDSYNC_FILE` lit un fichier local à la place.
+- Si le serveur de kidsync est injoignable (le poste est éteint), le passage ne change rien aux inscriptions et n'est pas compté comme un échec : les horaires sont publiés comme d'habitude. Un jeton refusé, lui, est un échec.
+- `CONNECTOR=kidsync` existe aussi pour un conteneur qui ne ferait que les inscriptions ; ce n'est pas nécessaire.
+- Essai sans rien écrire : `CONNECTOR=horaires KIDSYNC_FILE=…/inscriptions.json DRY_RUN=1`.
