@@ -1,5 +1,8 @@
 """Horaires en dur (CONNECTOR=horaires) : les postes de Rudy, Léa, Luis et Caroline, et la poubelle.
 
+Avec KIDSYNC_URL (ou KIDSYNC_FILE), le même passage publie aussi les inscriptions MJC des enfants
+(voir kidsync.py) : un seul conteneur pour tout ce qui va dans l'agenda de l'affichage.
+
 Contrairement à Silae, la source est un fichier du dépôt (donnees/horaires.json,
 format repris d'AbView) : l'agenda en est la copie exacte. Une modification
 n'est pas marquée « (modifié) », un poste retiré du fichier est retiré de
@@ -150,6 +153,12 @@ def synchro_horaires(cfg: Config, service=None, aujourdhui: date | None = None) 
             agenda = Agenda(pcfg, service=service)
             service = agenda.service  # une seule connexion pour tout le passage
             passage_horaires(pcfg, personne, agenda, aujourdhui)
+        if cfg.url_kidsync or cfg.fichier_kidsync:
+            # Les inscriptions des enfants (kidsync) dans le même passage, donc le même conteneur et le même
+            # compteur de santé : une panne de l'une ou l'autre source est vue au même endroit.
+            from .kidsync import passer_kidsync
+
+            passer_kidsync(cfg, service, aujourdhui)
     except Exception as e:
         n = compteur.echec(maintenant)
         # Le type seul : le texte brut d'une erreur peut contenir des données.
