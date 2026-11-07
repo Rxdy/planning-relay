@@ -207,7 +207,7 @@ def test_synchro_travail_en_paon_et_poubelle_sans_couleur(tmp_path):
                         ("horaires-caroline", "7"), ("horaires-poubelle", None)}
 
 
-def test_seule_la_poubelle_a_une_notification_la_veille_a_19h(tmp_path):
+def test_aucun_poste_ni_la_poubelle_n_a_de_notification(tmp_path):
     service = FauxService()
     synchro_horaires(replace(CFG, dossier_etat=str(tmp_path)), service=service, aujourdhui=LUNDI)
     rappels = {(e["extendedProperties"]["private"][PROP], str(e["reminders"])) for e in service.events().stock.values()}
@@ -215,7 +215,7 @@ def test_seule_la_poubelle_a_une_notification_la_veille_a_19h(tmp_path):
     assert rappels == {
         ("horaires-rudy", attendu_travail), ("horaires-lea", attendu_travail),
         ("horaires-luis", attendu_travail), ("horaires-caroline", attendu_travail),
-        ("horaires-poubelle", str({"useDefault": False, "overrides": [{"method": "popup", "minutes": 300}]})),
+        ("horaires-poubelle", attendu_travail),
     }
 
 
