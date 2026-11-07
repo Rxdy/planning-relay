@@ -41,12 +41,12 @@ def evenements(service):
 
 def test_mercredi_un_creneau_de_7h30_a_19h():
     (c,) = creneaux(ENTREES, "lyam", date(2026, 11, 9), date(2026, 12, 31))[:1]
-    assert (c.jour, c.poste, c.debut, c.fin, c.categorie) == (date(2026, 11, 25), "MJC", time(7, 30), time(19, 0), "periscolaire")
+    assert (c.jour, c.code, c.poste, c.debut, c.fin, c.categorie) == (date(2026, 11, 25), "MJC", "", time(7, 30), time(19, 0), "periscolaire")
 
 
 def test_periscolaire_de_16h30_a_19h():
     c = creneaux(ENTREES, "noah", date(2026, 12, 1), date(2026, 12, 31))
-    assert [(x.jour, x.poste, x.debut, x.fin) for x in c] == [(date(2026, 12, 7), "Périscolaire", time(16, 30), time(19, 0))]
+    assert [(x.jour, x.code, x.debut, x.fin) for x in c] == [(date(2026, 12, 7), "Périscolaire", time(16, 30), time(19, 0))]
 
 
 def test_un_ecart_n_est_pas_une_inscription():
@@ -62,7 +62,7 @@ def test_un_seul_creneau_reserve_donne_ses_horaires():
 def test_deux_activites_le_meme_jour_sont_reunies():
     c = creneaux([e("2026-11-25", "noah", "mercredis", ["Matin"]), e("2026-11-25", "noah", "periscolaire", PERI)],
                  "noah", AUJOURDHUI, date(2026, 12, 31))
-    assert len(c) == 1 and c[0].poste == "MJC + Périscolaire" and (c[0].debut, c[0].fin) == (time(7, 30), time(19, 0))
+    assert len(c) == 1 and c[0].code == "MJC + Périscolaire" and (c[0].debut, c[0].fin) == (time(7, 30), time(19, 0))
 
 
 def test_creneau_inconnu_est_une_erreur():
@@ -81,17 +81,47 @@ def test_cle_sans_accent():
     assert cle("Lyam") == "kidsync-lyam"
 
 
-def test_synchro_un_enfant_a_sa_cle_et_son_titre(tmp_path):
+def titres_par_cle(service):
+    return sorted((ev["extendedProperties"]["private"][PROP], ev["summary"], ev["start"]["dateTime"][:16])
+                  for ev in service.events().stock.values())
+
+
+def test_les_enfants_inscrits_pareil_ont_une_carte_commune(tmp_path):
     service = FauxService()
     cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path)))
     assert synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI) == 0
-    evs = evenements(service)
-    assert [(ev["extendedProperties"]["private"][PROP], ev["summary"], ev["start"]["dateTime"][:16]) for ev in evs] == [
-        ("kidsync-lyam", "Lyam — MJC", "2026-11-25T07:30"), ("kidsync-lyam", "Lyam — Périscolaire", "2026-12-07T16:30"),
-        ("kidsync-noah", "Noah — MJC", "2026-11-25T07:30"), ("kidsync-noah", "Noah — Périscolaire", "2026-12-07T16:30"),
+    # titre = les prénoms, comme la carte « Garde » ; le libellé « Périscolaire » vient de la catégorie
+    assert titres_par_cle(service) == [
+        ("kidsync-lyam-noah", "Lyam et Noah", "2026-11-25T07:30"),
+        ("kidsync-lyam-noah", "Lyam et Noah", "2026-12-07T16:30"),
     ]
+    evs = service.events().stock.values()
     assert {ev["extendedProperties"]["private"]["categorie"] for ev in evs} == {"periscolaire"}
     assert all("colorId" not in ev for ev in evs)
+
+
+def test_un_enfant_seul_a_sa_propre_carte(tmp_path):
+    service = FauxService()
+    entrees = [e("2026-11-25", "lyam", "mercredis", MERC), e("2026-11-25", "noah", "mercredis", MERC, "ecart"),
+               e("2026-12-07", "noah", "periscolaire", PERI)]
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, entrees)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
+    assert titres_par_cle(service) == [("kidsync-lyam", "Lyam", "2026-11-25T07:30"), ("kidsync-noah", "Noah", "2026-12-07T16:30")]
+
+
+def test_horaires_differents_le_meme_jour_deux_cartes(tmp_path):
+    service = FauxService()
+    entrees = [e("2026-12-07", "lyam", "periscolaire", PERI), e("2026-12-07", "noah", "periscolaire", ["17h30-19h00"])]
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, entrees)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
+    assert titres_par_cle(service) == [("kidsync-lyam", "Lyam", "2026-12-07T16:30"), ("kidsync-noah", "Noah", "2026-12-07T17:30")]
+
+
+def test_trois_enfants_les_noms_sont_liste_en_francais():
+    from planning_relay.kidsync import noms
+    assert noms(("lyam",)) == "Lyam"
+    assert noms(("lyam", "noah")) == "Lyam et Noah"
+    assert noms(("lea", "lyam", "noah")) == "Lea, Lyam et Noah"
 
 
 def test_second_passage_ne_change_rien(tmp_path):
@@ -103,15 +133,29 @@ def test_second_passage_ne_change_rien(tmp_path):
     assert service.events().stock == avant
 
 
-def test_une_inscription_qui_passe_en_ecart_est_retiree(tmp_path):
+def test_un_enfant_qui_passe_en_ecart_la_carte_commune_devient_celle_de_l_autre(tmp_path):
     service = FauxService()
     cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path)))
     synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
     retire = [x if not (x["enfant"] == "noah" and x["date"] == "2026-11-25") else {**x, "statut": "ecart"} for x in ENTREES]
     cfg = replace(cfg, fichier_kidsync=str(fichier(tmp_path, retire)))
     synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
-    titres = [ev["summary"] for ev in evenements(service)]
-    assert "Noah — MJC" not in titres and "Lyam — MJC" in titres
+    assert titres_par_cle(service) == [
+        ("kidsync-lyam", "Lyam", "2026-11-25T07:30"),             # Noah n'y est plus : Lyam seul
+        ("kidsync-lyam-noah", "Lyam et Noah", "2026-12-07T16:30"),  # le périscolaire reste commun
+    ]
+
+
+def test_migration_les_anciennes_cartes_par_enfant_sont_remplacees(tmp_path):
+    """Avant : une carte par enfant (clés kidsync-lyam et kidsync-noah). Après : une carte commune."""
+    service = FauxService()
+    separes = [e("2026-11-25", "lyam", "mercredis", MERC), e("2026-11-25", "noah", "mercredis", MERC, "ecart")]
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, separes)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
+    ensemble = [e("2026-11-25", "lyam", "mercredis", MERC), e("2026-11-25", "noah", "mercredis", MERC)]
+    cfg = replace(cfg, fichier_kidsync=str(fichier(tmp_path, ensemble)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
+    assert titres_par_cle(service) == [("kidsync-lyam-noah", "Lyam et Noah", "2026-11-25T07:30")]
 
 
 def test_le_passage_ne_touche_pas_aux_evenements_d_une_autre_source(tmp_path):
@@ -203,7 +247,7 @@ def test_le_passage_des_horaires_publie_aussi_les_inscriptions(tmp_path):
     service = FauxService()
     cfg = replace(HORAIRES, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path)), semaines=8)
     assert synchro_horaires(cfg, service=service, aujourdhui=LUNDI) == 0
-    assert {"horaires-rudy", "horaires-lea", "kidsync-lyam", "kidsync-noah"} <= cles(service)
+    assert {"horaires-rudy", "horaires-lea", "kidsync-lyam-noah"} <= cles(service)
 
 
 def test_sans_kidsync_le_passage_des_horaires_ne_change_pas(tmp_path):
