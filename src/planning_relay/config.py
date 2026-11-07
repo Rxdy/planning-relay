@@ -47,6 +47,11 @@ class Config:
     fuseau: str = "Europe/Paris"
     dry_run: bool = False
     dossier_etat: str = "/data"
+    # Inscriptions des enfants (CONNECTOR=kidsync) : fichier écrit par kidsync
+    fichier_kidsync: str = ""
+    # ou le serveur de kidsync (le conteneur va chercher le fichier) : KIDSYNC_URL + KIDSYNC_TOKEN
+    url_kidsync: str = ""
+    jeton_kidsync: str = ""
 
     @classmethod
     def depuis_env(cls, env: dict[str, str] | None = None) -> Config:
@@ -79,4 +84,7 @@ class Config:
             delai_essai=int(g("FETCH_RETRY_DELAY", "300")),
             dry_run=g("DRY_RUN").lower() in {"1", "true", "oui", "yes"},
             dossier_etat=g("STATE_DIR", "/data"),
+            fichier_kidsync=g("KIDSYNC_FILE"),
+            url_kidsync=g("KIDSYNC_URL"),
+            jeton_kidsync=g("KIDSYNC_TOKEN"),
         )
