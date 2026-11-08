@@ -52,6 +52,8 @@ class Config:
     # ou le serveur de kidsync (le conteneur va chercher le fichier) : KIDSYNC_URL + KIDSYNC_TOKEN
     url_kidsync: str = ""
     jeton_kidsync: str = ""
+    # Les enfants suivis, même absents du fichier : leurs anciennes cartes sont retirées de l'agenda
+    enfants_kidsync: tuple[str, ...] = ("lyam", "noah")
 
     @classmethod
     def depuis_env(cls, env: dict[str, str] | None = None) -> Config:
@@ -87,4 +89,5 @@ class Config:
             fichier_kidsync=g("KIDSYNC_FILE"),
             url_kidsync=g("KIDSYNC_URL"),
             jeton_kidsync=g("KIDSYNC_TOKEN"),
+            enfants_kidsync=tuple(x.lower() for x in _liste(g("KIDSYNC_ENFANTS", "lyam,noah"))),
         )
