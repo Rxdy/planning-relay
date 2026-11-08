@@ -36,6 +36,7 @@ Le conteneur passe en `unhealthy` après 3 échecs d'affilée, ou si aucun passa
 | `EVENT_COLOR_ID` | Couleur Google Agenda (1 à 11) |
 | `DRY_RUN` | `1` : ne rien écrire ni envoyer |
 | `KIDSYNC_URL`, `KIDSYNC_TOKEN` | Adresse du serveur de kidsync et son jeton : le conteneur `horaires` y va chercher les inscriptions des enfants à chaque passage |
+| `KIDSYNC_ENFANTS` | Les enfants suivis (défaut `lyam,noah`), même absents du fichier : leurs anciennes cartes sont retirées de l'agenda |
 | `KIDSYNC_FILE` | À la place de l'URL, un fichier local `inscriptions.json` |
 
 ## Horaires en dur

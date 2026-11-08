@@ -77,7 +77,7 @@ def lire(cfg: Config) -> list[dict]:
 
     try:
         r = httpx.get(cfg.url_kidsync, headers={"Authorization": f"Bearer {cfg.jeton_kidsync}"}, timeout=15)
-    except httpx.TransportError as e:
+    except (httpx.NetworkError, httpx.TimeoutException) as e:  # pas UnsupportedProtocol : une URL fausse est une panne de réglage
         raise SourceInjoignable(type(e).__name__) from None
     if r.status_code in (401, 403):
         raise PermissionError("Jeton kidsync refusé")  # une vraie panne de réglage : comptée comme échec
@@ -125,7 +125,10 @@ def creneaux(entrees: list[dict], enfant: str, debut: date, fin: date, famille: 
     resultat = []
     for jour, es in sorted(par_jour.items()):
         bornes = [_bornes(e["activite"], c) for e in es for c in e["creneaux"]]
-        postes = " + ".join(dict.fromkeys(POSTES.get(e["activite"], e["activite"]) for e in es))
+        # dans l'ordre des activités de la famille, pas celui du fichier : le libellé sert de signature de groupe
+        ordre = FAMILLES[famille]
+        postes = " + ".join(dict.fromkeys(
+            POSTES.get(e["activite"], e["activite"]) for e in sorted(es, key=lambda x: ordre.index(x["activite"]))))
         # poste="" : le titre est les prénoms seuls (cfg.personne), comme la carte « Garde »
         resultat.append(Creneau(
             jour=jour, code=postes, poste="", intitule=postes, categorie=CATEGORIES[famille],
@@ -134,13 +137,13 @@ def creneaux(entrees: list[dict], enfant: str, debut: date, fin: date, famille: 
     return resultat
 
 
-def creneaux_par_groupe(entrees: list[dict], debut: date, fin: date) -> dict[tuple[str, tuple[str, ...]], dict[date, Creneau]]:
+def creneaux_par_groupe(entrees: list[dict], debut: date, fin: date, suivis: tuple[str, ...] = ()) -> dict[tuple[str, tuple[str, ...]], dict[date, Creneau]]:
     """{(famille, groupe d'enfants): {jour: créneau}}. Le même jour, les enfants au même créneau forment un groupe.
 
     Tous les groupes possibles sont présents (même vides) : un groupe qui n'a plus aucun jour doit voir
     ses anciens événements retirés de l'agenda (ex. Noah repasse en écart : la carte « Lyam et Noah »
     laisse la place à la carte « Lyam »)."""
-    tous = enfants(entrees)
+    tous = sorted(set(enfants(entrees)) | set(suivis))
     resultat: dict[tuple[str, tuple[str, ...]], dict[date, Creneau]] = {}
     for famille in FAMILLES:
         par_enfant = {e: {c.jour: c for c in creneaux(entrees, e, debut, fin, famille)} for e in tous}
@@ -190,8 +193,12 @@ def passer_kidsync(cfg: Config, service=None, aujourdhui: date | None = None) ->
         # Pas une panne : le poste de kidsync peut être éteint. L'agenda garde ses derniers événements.
         log.warning("Serveur kidsync injoignable (%s) ; agenda inchangé", e)
         return False
+    if not any(e["activite"] in FAMILLES["periscolaire"] for e in entrees):
+        # kidsync relève toujours les mercredis et le périscolaire : un fichier qui n'en a aucune ligne est tronqué
+        # ou vidé, et le suivre effacerait tous les événements de l'agenda
+        raise ValueError("Fichier kidsync sans aucune ligne mercredis/périscolaire : suspect, agenda inchangé")
     debut, fin = fenetre(aujourdhui, cfg.semaines)
-    for (famille, groupe), lus in creneaux_par_groupe(entrees, debut, fin).items():
+    for (famille, groupe), lus in creneaux_par_groupe(entrees, debut, fin, cfg.enfants_kidsync).items():
         pcfg = replace(cfg, personne=noms(groupe), cle_synchro=cle(groupe, famille), couleur=None, rappels=())
         agenda = Agenda(pcfg, service=service)
         service = agenda.service  # une seule connexion pour tout le passage
