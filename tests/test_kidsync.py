@@ -161,8 +161,38 @@ def test_migration_les_anciennes_cartes_par_enfant_sont_remplacees(tmp_path):
 def test_le_passage_ne_touche_pas_aux_evenements_d_une_autre_source(tmp_path):
     service = FauxService()
     cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path)))
+    etranger = service.events().insert(calendarId="affichage@group", body={
+        "summary": "Rudy", "start": {"dateTime": "2026-11-25T08:00:00+01:00"}, "end": {"dateTime": "2026-11-25T16:00:00+01:00"},
+        "extendedProperties": {"private": {PROP: "horaires-rudy"}}}).execute()
     synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
-    assert all(ev["extendedProperties"]["private"][PROP].startswith("kidsync-") for ev in evenements(service))
+    assert etranger["id"] in service.events().stock
+    assert any(ev["extendedProperties"]["private"][PROP].startswith("kidsync-") for ev in evenements(service))
+
+
+def test_un_enfant_absent_du_fichier_voit_ses_cartes_retirees(tmp_path):
+    service = FauxService()
+    cfg = replace(CFG, dossier_etat=str(tmp_path))
+    synchro_kidsync(replace(cfg, fichier_kidsync=str(fichier(tmp_path))), service=service, aujourdhui=AUJOURDHUI)
+    assert {c for c, *_ in titres_par_cle(service)} == {"kidsync-lyam-noah"}
+    seul = [x for x in ENTREES if x["enfant"] == "noah"]
+    synchro_kidsync(replace(cfg, fichier_kidsync=str(fichier(tmp_path, seul))), service=service, aujourdhui=AUJOURDHUI)
+    assert {c for c, *_ in titres_par_cle(service)} == {"kidsync-noah"}
+
+
+def test_un_fichier_sans_mercredis_ni_periscolaire_est_un_echec_et_ne_supprime_rien(tmp_path):
+    service = FauxService()
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
+    avant = set(service.events().stock)
+    vide = [e("2026-11-10", "lyam", "cantine", ["Repas"])]
+    assert synchro_kidsync(replace(cfg, fichier_kidsync=str(fichier(tmp_path, vide))), service=service, aujourdhui=AUJOURDHUI) == 1
+    assert set(service.events().stock) == avant
+
+
+def test_l_intitule_ne_depend_pas_de_l_ordre_du_fichier():
+    a = creneaux([e("2026-11-25", "noah", "periscolaire", PERI), e("2026-11-25", "noah", "mercredis", ["Matin"])],
+                 "noah", AUJOURDHUI, date(2026, 12, 31))
+    assert a[0].code == "MJC + Périscolaire"
 
 
 def test_synchro_compte_les_echecs(tmp_path):
@@ -209,10 +239,14 @@ def test_serveur_injoignable_ne_change_rien_et_ne_compte_pas_d_echec(monkeypatch
     def get(*a, **k):
         raise httpx.ConnectError("hors ligne")
 
-    monkeypatch.setattr("httpx.get", get)
     service = FauxService()
+    cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path)))
+    synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)  # des événements déjà publiés
+    avant = dict(service.events().stock)
+    assert avant
+    monkeypatch.setattr("httpx.get", get)
     assert synchro_kidsync(avec_url(tmp_path), service=service, aujourdhui=AUJOURDHUI) == 0
-    assert service.events().stock == {}
+    assert service.events().stock == avant
     from planning_relay.alerte import Compteur
 
     assert Compteur(str(tmp_path)).lire() == 0
@@ -224,6 +258,12 @@ def test_lire_par_url_leve_source_injoignable(monkeypatch, tmp_path):
     monkeypatch.setattr("httpx.get", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectTimeout("lent")))
     with pytest.raises(SourceInjoignable):
         lire(avec_url(tmp_path))
+
+
+def test_url_sans_protocole_est_un_echec_pas_un_serveur_injoignable(tmp_path):
+    cfg = avec_url(tmp_path)
+    cfg = replace(cfg, url_kidsync="poste:8765/inscriptions.json")
+    assert synchro_kidsync(cfg, service=FauxService(), aujourdhui=AUJOURDHUI) == 1
 
 
 def test_jeton_refuse_est_un_echec_compte(monkeypatch, tmp_path):
@@ -296,7 +336,7 @@ def test_cantine_de_11h30_a_13h30_et_le_repas_de_la_mjc_reste_a_12h(tmp_path):
 
 def test_cantine_commune_aux_deux_enfants_une_seule_carte(tmp_path):
     service = FauxService()
-    entrees = [e("2026-11-10", "lyam", "cantine", CANT), e("2026-11-10", "noah", "cantine", CANT)]
+    entrees = [e("2026-11-10", "lyam", "periscolaire", PERI, "a_inscrire"), e("2026-11-10", "lyam", "cantine", CANT), e("2026-11-10", "noah", "cantine", CANT)]
     cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, entrees)))
     assert synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI) == 0
     assert titres_par_cle(service) == [("kidsync-cantine-lyam-noah", "Lyam et Noah", "2026-11-10T11:30")]
@@ -315,7 +355,7 @@ def test_cantine_et_perisco_le_meme_jour_sont_deux_cartes(tmp_path):
 
 def test_cantine_d_un_seul_enfant_et_non_inscrite_pas_publiee(tmp_path):
     service = FauxService()
-    entrees = [e("2026-11-10", "lyam", "cantine", CANT), e("2026-11-10", "noah", "cantine", CANT, "a_inscrire")]
+    entrees = [e("2026-11-10", "lyam", "periscolaire", PERI, "a_inscrire"), e("2026-11-10", "lyam", "cantine", CANT), e("2026-11-10", "noah", "cantine", CANT, "a_inscrire")]
     cfg = replace(CFG, dossier_etat=str(tmp_path), fichier_kidsync=str(fichier(tmp_path, entrees)))
     synchro_kidsync(cfg, service=service, aujourdhui=AUJOURDHUI)
     assert titres_par_cle(service) == [("kidsync-cantine-lyam", "Lyam", "2026-11-10T11:30")]
