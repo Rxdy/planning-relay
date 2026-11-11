@@ -95,3 +95,30 @@ def test_sante(tmp_path):
     assert not ok and "3 échecs" in message
     compteur.succes()
     assert sante(c, t(15, 10))[0]
+
+
+def test_sante_avec_horaires_dans_le_meme_conteneur(tmp_path):
+    from dataclasses import replace
+
+    from planning_relay.alerte import SEUIL
+
+    c = replace(cfg(tmp_path), horaires_aussi=True)
+    assert sante(c, t(15))[0]
+    h = Compteur(str(tmp_path / "horaires"))
+    for _ in range(SEUIL):
+        h.echec(t(15))
+    ok, message = sante(c, t(15, 10))
+    assert not ok and "horaires" in message
+    # sans le partage, ce compteur n'est pas regardé
+    assert sante(replace(c, horaires_aussi=False), t(15, 10))[0]
+
+
+def test_config_du_passage_horaires_partage(tmp_path):
+    from dataclasses import replace
+
+    from planning_relay.__main__ import cfg_horaires
+
+    c = replace(cfg(tmp_path), connecteur="silae", horaires_aussi=True, horaires_semaines=2, horaires_couleur="7")
+    ch = cfg_horaires(c)
+    assert (ch.connecteur, ch.semaines, ch.couleur) == ("horaires", 2, "7")
+    assert ch.dossier_etat == str(tmp_path / "horaires") and not ch.horaires_aussi
