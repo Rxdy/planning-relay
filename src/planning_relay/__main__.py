@@ -51,7 +51,29 @@ def main(argv: list[str] | None = None) -> int:
 
 
 
+def replace_sans_horaires(cfg: Config) -> Config:
+    from dataclasses import replace
+
+    return replace(cfg, horaires_aussi=False)
+
+
+def cfg_horaires(cfg: Config) -> Config:
+    """La config du passage horaires quand il partage le conteneur du connecteur principal."""
+    from dataclasses import replace
+    from pathlib import Path
+
+    return replace(cfg, connecteur="horaires", semaines=cfg.horaires_semaines, couleur=cfg.horaires_couleur,
+                   dossier_etat=str(Path(cfg.dossier_etat) / "horaires"), horaires_aussi=False)
+
+
 def synchro(cfg: Config) -> int:
+    if cfg.horaires_aussi and cfg.connecteur != "horaires":
+        # Les horaires d'abord : rapides, et indépendants de Silae (lent, avec ses essais).
+        # Chaque passage a son compteur d'échecs ; le code de sortie retient le pire.
+        from .horaires import synchro_horaires
+
+        code = synchro_horaires(cfg_horaires(cfg))
+        return max(code, synchro(replace_sans_horaires(cfg)))
     if cfg.connecteur == "horaires":
         from .horaires import synchro_horaires
 
