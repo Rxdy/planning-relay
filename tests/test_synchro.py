@@ -196,6 +196,11 @@ def test_alert_to_configurable():
     assert cfg(SMTP_USER="rudy@x.fr", ALERT_TO="rudy@x.fr, charlene@x.fr").alerte_to == ["rudy@x.fr", "charlene@x.fr"]
 
 
+def test_expediteur_configurable_sinon_identifiant_smtp():
+    assert cfg(SMTP_USER="rudy@x.fr").smtp_from == ""
+    assert cfg(SMTP_USER="rudy@x.fr", MAIL_FROM="planning@x.fr").smtp_from == "planning@x.fr"
+
+
 def test_repos_ignores_par_defaut_meme_variable_vide():
     # Le workflow passe SKIP_CODES vide quand la variable GitHub n'existe pas
     agenda = Agenda({})
