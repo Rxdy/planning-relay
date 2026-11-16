@@ -70,3 +70,11 @@ kidsync (dépôt `Rxdy/kidsync`) relève le planning du portail MJC et le sert e
 - Si le serveur de kidsync est injoignable (le poste est éteint), le passage ne change rien aux inscriptions et n'est pas compté comme un échec : les horaires sont publiés comme d'habitude. Un jeton refusé, lui, est un échec.
 - `CONNECTOR=kidsync` existe aussi pour un conteneur qui ne ferait que les inscriptions ; ce n'est pas nécessaire.
 - Essai sans rien écrire : `CONNECTOR=horaires KIDSYNC_FILE=…/inscriptions.json DRY_RUN=1`.
+
+## Publier une version
+
+```
+scripts/release.sh 1.4.0
+```
+
+Depuis `main` à jour et propre : pose le tag `v1.4.0` et le pousse. La CI teste, construit les images (`:v1.4.0` et `:latest`) puis crée la Release GitHub avec ses notes ; Watchtower installe la nouvelle image sur le Pi. **Un simple push sur `main` ne déploie rien.** Pour figer une version sur le Pi, mettre l'image en `:v1.4.0` au lieu de `:latest` dans son compose.
