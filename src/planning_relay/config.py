@@ -38,6 +38,8 @@ class Config:
     smtp_port: int = 465
     smtp_user: str = ""
     smtp_password: str = ""
+    # Adresse d'expéditeur affichée ; par défaut, l'identifiant de connexion (SMTP_USER)
+    smtp_from: str = ""
     mail_to: list[str] = field(default_factory=list)
     alerte_to: list[str] = field(default_factory=list)
     # Exécution
@@ -83,6 +85,7 @@ class Config:
             smtp_port=int(g("SMTP_PORT", "465")),
             smtp_user=g("SMTP_USER"),
             smtp_password=g("SMTP_PASSWORD"),
+            smtp_from=g("MAIL_FROM"),
             mail_to=_liste(g("MAIL_TO")),
             # Alertes de panne : l'administrateur seul (par défaut, l'expéditeur)
             alerte_to=_liste(g("ALERT_TO") or g("SMTP_USER")),
