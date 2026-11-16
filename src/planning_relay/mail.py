@@ -243,7 +243,7 @@ class Messagerie:
     def envoyer(self, sujet: str, texte: str, html: str | None = None,
                 destinataires: list[str] | None = None) -> None:
         msg = EmailMessage()
-        msg["From"] = self.cfg.smtp_user
+        msg["From"] = self.cfg.smtp_from or self.cfg.smtp_user
         msg["To"] = ", ".join(destinataires or self.cfg.mail_to)
         msg["Subject"] = sujet
         msg.set_content(texte)
