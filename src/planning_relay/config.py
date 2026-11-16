@@ -38,6 +38,8 @@ class Config:
     smtp_port: int = 465
     smtp_user: str = ""
     smtp_password: str = ""
+    # Adresse d'expéditeur affichée ; par défaut, l'identifiant de connexion (SMTP_USER)
+    smtp_from: str = ""
     mail_to: list[str] = field(default_factory=list)
     alerte_to: list[str] = field(default_factory=list)
     # Exécution
@@ -47,6 +49,11 @@ class Config:
     fuseau: str = "Europe/Paris"
     dry_run: bool = False
     dossier_etat: str = "/data"
+    # Le même conteneur fait aussi le passage « horaires » (HORAIRES_AUSSI=1), avec son propre
+    # dossier d'état (sous-dossier horaires/), sa fenêtre et sa couleur
+    horaires_aussi: bool = False
+    horaires_semaines: int = 2
+    horaires_couleur: str | None = None
     # Inscriptions des enfants (CONNECTOR=kidsync) : fichier écrit par kidsync
     fichier_kidsync: str = ""
     # ou le serveur de kidsync (le conteneur va chercher le fichier) : KIDSYNC_URL + KIDSYNC_TOKEN
@@ -78,6 +85,7 @@ class Config:
             smtp_port=int(g("SMTP_PORT", "465")),
             smtp_user=g("SMTP_USER"),
             smtp_password=g("SMTP_PASSWORD"),
+            smtp_from=g("MAIL_FROM"),
             mail_to=_liste(g("MAIL_TO")),
             # Alertes de panne : l'administrateur seul (par défaut, l'expéditeur)
             alerte_to=_liste(g("ALERT_TO") or g("SMTP_USER")),
@@ -86,6 +94,9 @@ class Config:
             delai_essai=int(g("FETCH_RETRY_DELAY", "300")),
             dry_run=g("DRY_RUN").lower() in {"1", "true", "oui", "yes"},
             dossier_etat=g("STATE_DIR", "/data"),
+            horaires_aussi=g("HORAIRES_AUSSI").lower() in {"1", "true", "oui", "yes"},
+            horaires_semaines=int(g("HORAIRES_WEEKS", "2")),
+            horaires_couleur=g("HORAIRES_COLOR_ID") or None,
             fichier_kidsync=g("KIDSYNC_FILE"),
             url_kidsync=g("KIDSYNC_URL"),
             jeton_kidsync=g("KIDSYNC_TOKEN"),

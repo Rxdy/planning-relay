@@ -36,6 +36,11 @@ def _fichier_dernier(cfg: Config) -> Path:
 
 def sante(cfg: Config, maintenant: datetime | None = None) -> tuple[bool, str]:
     maintenant = maintenant or datetime.now(ZoneInfo(cfg.fuseau))
+    if cfg.horaires_aussi:
+        # Le passage horaires a son propre compteur : une panne de l'un ou l'autre rend le conteneur malade
+        n = Compteur(str(Path(cfg.dossier_etat) / "horaires")).lire()
+        if n >= SEUIL:
+            return False, f"horaires : {n} échecs d'affilée"
     echecs = Compteur(cfg.dossier_etat).lire()
     if echecs >= SEUIL:
         return False, f"{echecs} échecs d'affilée"
