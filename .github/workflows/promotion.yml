@@ -1,0 +1,64 @@
+# Promotion sans reconstruction : on reprend les images construites sur dev (images.yml), retrouvées par l'empreinte
+# du contenu de chaque service, et on leur pose le tag de l'étape. Le manifeste suit le même chemin.
+#   fusion dev → staging      : tag staging
+#   fusion staging → main     : tags prod et latest (Watchtower suit latest)
+#   make release V=X.Y.Z      : tag vX.Y.Z sur main, puis release GitHub avec le manifeste
+# Si le contenu n'est jamais passé par dev, il n'a pas d'image : la promotion échoue au lieu de reconstruire.
+name: Promotion
+
+on:
+  push:
+    branches: [staging, main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+concurrency:
+  group: promotion-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  promouvoir:
+    name: Promotion ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oras-project/setup-oras@v1
+
+      - name: Tags de l'étape
+        id: etape
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/staging) echo "tags=staging" >> "$GITHUB_OUTPUT" ;;
+            refs/heads/main) echo "tags=prod latest" >> "$GITHUB_OUTPUT" ;;
+            refs/tags/v*)
+              if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+                echo "::error::$GITHUB_REF_NAME n'est pas sur main : une version se pose sur ce qui est en production."
+                exit 1
+              fi
+              echo "tags=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - run: .github/images/images.sh manifeste "$GITHUB_SHA" "$RUNNER_TEMP/manifeste.json"
+      - run: .github/images/images.sh etiqueter "$RUNNER_TEMP/manifeste.json" ${{ steps.etape.outputs.tags }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: manifeste
+          path: ${{ runner.temp }}/manifeste.json
+
+      - name: Release GitHub
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/manifeste.json" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
