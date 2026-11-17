@@ -1,0 +1,17 @@
+{
+  "projet": "planning-relay",
+  "plateformes": "linux/arm64",
+  "services": {
+    "relay": {
+      "image": "planning-relay",
+      "contexte": ".",
+      "dockerfile": "Dockerfile",
+      "sources": [
+        "Dockerfile",
+        ".dockerignore",
+        "pyproject.toml",
+        "src"
+      ]
+    }
+  }
+}
