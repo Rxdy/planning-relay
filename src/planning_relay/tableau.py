@@ -65,6 +65,41 @@ def valider(regles: object) -> list[dict]:
     return regles
 
 
+NOM_MAX = 40
+
+
+def fichier_abview(cfg: Config) -> Path:
+    return Path(cfg.dossier_config) / "abview.json"
+
+
+def lire_abview(cfg: Config) -> dict:
+    """Les réglages d'AbView modifiés ici ({} : ceux livrés avec AbView). Un fichier abîmé ne casse pas la page."""
+    try:
+        donnees = json.loads(fichier_abview(cfg).read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+    return donnees if isinstance(donnees, dict) else {}
+
+
+def enregistrer_abview(cfg: Config, nom: str) -> None:
+    """Le nom affiché dans l'en-tête d'AbView. Vide : on revient à celui livré avec AbView."""
+    nom = " ".join(nom.split())
+    if len(nom) > NOM_MAX or any(not c.isprintable() for c in nom):
+        raise ValueError(f"Le nom doit tenir en {NOM_MAX} caractères, sans caractère spécial.")
+    cible = fichier_abview(cfg)
+    donnees = {k: v for k, v in lire_abview(cfg).items() if k != "name"}
+    if nom:
+        donnees["name"] = nom
+    if not donnees:
+        cible.unlink(missing_ok=True)
+        return
+    cible.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cible.with_suffix(".tmp")
+    tmp.write_text(json.dumps(donnees, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, cible)
+    log.info("Réglages AbView modifiés depuis le tableau de bord")
+
+
 def lire(cfg: Config) -> list[dict]:
     return charger(fichier_actif(cfg))
 
@@ -274,21 +309,21 @@ def _appliquer_personne(p: dict, i: int, un, champs: dict) -> None:
 STYLE = """
 :root{--fond:#f6f7f9;--carte:#fff;--texte:#1d2330;--doux:#667085;--bord:#d9dde5;--accent:#2f5bd8;--ok:#0b7a43;--ko:#b42318}
 @media(prefers-color-scheme:dark){:root{--fond:#14171e;--carte:#1c212b;--texte:#e8eaf0;--doux:#99a1b3;--bord:#323948;--accent:#7ea2ff;--ok:#4cc38a;--ko:#ff8a80}}
-*{box-sizing:border-box}body{margin:0;background:var(--fond);color:var(--texte);font:16px/1.45 system-ui,sans-serif}
+*{box-sizing:border-box;min-width:0}html{-webkit-text-size-adjust:100%}body{overflow-wrap:anywhere;margin:0;background:var(--fond);color:var(--texte);font:16px/1.45 system-ui,sans-serif}
 main{max-width:760px;margin:0 auto;padding:16px}h1{font-size:1.4rem;margin:.2em 0}h2{font-size:1.1rem;margin:0 0 .6em}h3{font-size:1rem;margin:.9em 0 .3em}
 .carte{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:16px;margin:14px 0}
-.jour{display:grid;grid-template-columns:6.5em 1fr 1fr;gap:8px;align-items:center;margin:6px 0}
-.ligne-fixe{border:1px solid var(--bord);border-radius:10px;padding:10px;margin:8px 0}
+.jour{display:grid;grid-template-columns:6.5em minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;margin:6px 0}
+.cases{display:flex;flex-wrap:wrap;gap:4px 12px}.cases label.case{margin:0}.ligne-fixe{border:1px solid var(--bord);border-radius:10px;padding:10px;margin:8px 0}
 input,textarea,button{font:inherit}input[type=time],input[type=text],input[type=number]{padding:6px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);color:var(--texte);width:100%}
-input[type=number]{width:5em}.heures{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+input[type=number]{width:5em}input[type=time]{min-width:0;max-width:100%}p input[type=text]{margin-top:4px}.heures{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:8px}
 textarea{width:100%;min-height:22em;font-family:ui-monospace,monospace;font-size:.85rem;padding:8px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);color:var(--texte)}
 button{padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
 button.sec{background:transparent;color:var(--accent)}.doux{color:var(--doux);font-size:.9rem}
-.ok{color:var(--ok);font-weight:600}.ko{color:var(--ko);font-weight:600}label.case{margin-right:12px;white-space:nowrap}
+.ok{color:var(--ok);font-weight:600}.ko{color:var(--ko);font-weight:600}label.case{margin-right:12px}
 .apercu{font-size:.9rem;color:var(--doux);margin-top:8px}form.ligne{display:inline}
 details.semaine{border:1px solid var(--bord);border-radius:10px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}
 .danger{margin-top:12px;font-size:.9rem;color:var(--doux)}
-@media(max-width:480px){.jour{grid-template-columns:5em 1fr 1fr}}
+@media(max-width:480px){main{padding:10px}.carte{padding:12px}.jour{grid-template-columns:4.5em minmax(0,1fr) minmax(0,1fr)}}
 """
 
 
@@ -317,7 +352,7 @@ def _section_fixe(i: int, p: dict) -> str:
             f'<label class="case"><input type="checkbox" name="p{i}_g{k}_{j}"{" checked" if j in jours else ""}> {l[:3]}</label>'
             for j, l in zip(JOURS, LIBELLES))
         lignes.append(
-            f'<div class="ligne-fixe"><div>{cases}</div><div class="heures">'
+            f'<div class="ligne-fixe"><div class="cases">{cases}</div><div class="heures">'
             f'<input type="time" name="p{i}_g{k}_debut" value="{h(debut)}" aria-label="Début, ligne {k + 1}">'
             f'<input type="time" name="p{i}_g{k}_fin" value="{h(fin)}" aria-label="Fin, ligne {k + 1}"></div></div>')
     return ('<p class="doux">Une ligne = des jours + une heure de début et de fin. '
@@ -380,8 +415,8 @@ def _carte(i: int, p: dict, aujourdhui: date) -> str:
         shift = p["type"] == "shift"
         radio = lambda v, t, coche: (f'<label class="case"><input type="radio" name="p{i}_type" value="{v}"'  # noqa: E731
                                      f'{" checked" if coche else ""}> {t}</label>')
-        bloc.append("<p>" + radio("fixed", "Horaires fixes (pas de postes)", not shift)
-                    + radio("shift", "Postes en rotation", shift) + "</p>")
+        bloc.append('<div class="cases">' + radio("fixed", "Horaires fixes (pas de postes)", not shift)
+                    + radio("shift", "Postes en rotation", shift) + "</div>")
         bloc.append(f'<details{"" if shift else " open"}><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, p)}</details>')
         bloc.append(f'<details{" open" if shift else ""}><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, p, aujourdhui)}</details>')
         bloc.append('<p class="doux">Seule la partie choisie ci-dessus est utilisée.</p>')
@@ -394,7 +429,7 @@ def _carte(i: int, p: dict, aujourdhui: date) -> str:
 
 
 def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "", modifie: bool = False,
-         historique: list[str] | None = None, aujourdhui: date | None = None) -> str:
+         historique: list[str] | None = None, aujourdhui: date | None = None, abview: dict | None = None) -> str:
     aujourdhui = aujourdhui or date.today()
     h = escape
     jt = f'<input type="hidden" name="jeton" value="{h(jeton)}">'
@@ -402,10 +437,17 @@ def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "",
     i = len(regles)
     corps.append(
         f'<section class="carte"><h2>Ajouter une personne</h2><p>Nom : <input type="text" name="p{i}_nom" placeholder="laisser vide pour ne rien ajouter"></p>'
-        f'<p><label class="case"><input type="radio" name="p{i}_type" value="fixed" checked> Horaires fixes</label>'
-        f'<label class="case"><input type="radio" name="p{i}_type" value="shift"> Postes en rotation</label></p>'
+        f'<div class="cases"><label class="case"><input type="radio" name="p{i}_type" value="fixed" checked> Horaires fixes</label>'
+        f'<label class="case"><input type="radio" name="p{i}_type" value="shift"> Postes en rotation</label></div>'
         f'<details><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, {})}</details>'
         f'<details><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, {}, aujourdhui)}</details></section>')
+    nom = escape(str((abview or {}).get("name", "")))
+    bloc_abview = (
+        f'<section class="carte"><h2>AbView</h2><form method="post" action="/abview">{jt}'
+        f'<p>Nom affiché dans l\'en-tête : <input type="text" name="nom" value="{nom}" maxlength="{NOM_MAX}" '
+        'placeholder="vide = le nom livré avec AbView" aria-label="Nom dans l\'en-tête"></p>'
+        '<p class="doux">Pris en compte quand AbView recharge sa configuration (au rechargement de la page de l\'écran).</p>'
+        '<button>Enregistrer le nom</button></form></section>')
     etat = "Horaires modifiés depuis ce tableau de bord." if modifie else "Horaires livrés avec l'image (aucune modification)."
     notif = (f'<p class="ok" role="status">{h(message)}</p>' if message else "") + (
         f'<p class="ko" role="alert">{h(erreur)}</p>' if erreur else "")
@@ -418,6 +460,7 @@ def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "",
 <title>Horaires — tableau de bord</title><style>{STYLE}</style></head><body><main>
 <h1>Horaires et poubelle</h1><p class="doux">{h(etat)} Pris en compte au prochain passage (à l'heure pile).</p>{notif}
 <form method="post" action="/enregistrer">{jt}{"".join(corps)}<button>Enregistrer</button></form>
+{bloc_abview}
 <section class="carte"><h2>Avancé</h2><details><summary>JSON brut (semaines particulières, couleurs, rappels)</summary>
 <form method="post" action="/brut">{jt}<textarea name="json" spellcheck="false">{brut}</textarea><p><button>Enregistrer le JSON</button></p></form></details>
 {"<p class='doux'>Versions précédentes :</p>" + hist if hist else ""}
@@ -466,7 +509,7 @@ def _handler(cfg: Config, mdp: str, jeton: str):
         def _afficher(self, **kw) -> None:
             regles = kw.pop("regles", None) or lire(cfg)
             modifie = (Path(cfg.dossier_config) / "horaires.json").is_file()
-            self._repondre(page(regles, jeton, modifie=modifie, historique=sauvegardes(cfg), **kw))
+            self._repondre(page(regles, jeton, modifie=modifie, historique=sauvegardes(cfg), abview=lire_abview(cfg), **kw))
 
         def do_GET(self):
             if not self._autorise():
@@ -495,6 +538,9 @@ def _handler(cfg: Config, mdp: str, jeton: str):
                         raise ValueError(f"JSON invalide : {e}") from None
                     enregistrer(cfg, regles)
                     return self._afficher(message="Enregistré.")
+                if self.path == "/abview":
+                    enregistrer_abview(cfg, (champs.get("nom") or [""])[0])
+                    return self._afficher(message="Nom enregistré.")
                 if self.path == "/restaurer":
                     restaurer(cfg, (champs.get("nom") or [""])[0])
                     return self._afficher(message="Version restaurée.")
