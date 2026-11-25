@@ -26,5 +26,33 @@ services:
         max-size: "5m"
         max-file: "2"
 
+  # Tableau de bord des horaires et de la poubelle : même image, même volume (il y écrit horaires.json,
+  # que les passages préfèrent à celui de l'image). Publié sur 127.0.0.1 seulement : on l'ouvre par
+  # Tailscale avec `sudo tailscale serve --bg 8088` (https://rp-meliodas.<tailnet>.ts.net), jamais en public.
+  tableau:
+    image: ghcr.io/rxdy/planning-relay:latest
+    container_name: planning-relay-tableau
+    command: ["tableau"]
+    restart: unless-stopped
+    mem_limit: 64m
+    environment:
+      # Mot de passe en plus de Tailscale (optionnel) : mettre TABLEAU_MDP dans le .env
+      TABLEAU_MDP: "${TABLEAU_MDP:-}"
+    ports:
+      - "127.0.0.1:8088:8080"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    volumes:
+      - planning-relay-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,urllib.error\ntry: urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5)\nexcept urllib.error.HTTPError as e: raise SystemExit(0 if e.code == 401 else 1)"]
+      interval: 5m
+      timeout: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+
 volumes:
   planning-relay-data: {}

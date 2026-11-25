@@ -49,6 +49,9 @@ class Config:
     fuseau: str = "Europe/Paris"
     dry_run: bool = False
     dossier_etat: str = "/data"
+    # Racine du volume (STATE_DIR) : le tableau de bord y écrit horaires.json, que les passages préfèrent
+    # au fichier livré avec l'image. Reste fixe quand dossier_etat descend dans horaires/.
+    dossier_config: str = "/data"
     # Le même conteneur fait aussi le passage « horaires » (HORAIRES_AUSSI=1), avec son propre
     # dossier d'état (sous-dossier horaires/), sa fenêtre et sa couleur
     horaires_aussi: bool = False
@@ -94,6 +97,7 @@ class Config:
             delai_essai=int(g("FETCH_RETRY_DELAY", "300")),
             dry_run=g("DRY_RUN").lower() in {"1", "true", "oui", "yes"},
             dossier_etat=g("STATE_DIR", "/data"),
+            dossier_config=g("STATE_DIR", "/data"),
             horaires_aussi=g("HORAIRES_AUSSI").lower() in {"1", "true", "oui", "yes"},
             horaires_semaines=int(g("HORAIRES_WEEKS", "2")),
             horaires_couleur=g("HORAIRES_COLOR_ID") or None,
