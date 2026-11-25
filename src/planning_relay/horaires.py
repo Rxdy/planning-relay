@@ -35,7 +35,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .comparaison import comparer
-from .config import Config
+from .config import HORAIRES_PAR_DEFAUT, Config
 from .modeles import Changement, Creneau
 from .synchro import etape, fenetre
 
@@ -51,6 +51,15 @@ def charger(chemin: str | Path) -> list[dict]:
         if not p.get("name") or p.get("type") not in TYPES:
             raise ValueError(f"Personne invalide dans {chemin} : {p.get('name')!r} ({p.get('type')!r})")
     return regles
+
+
+def fichier_actif(cfg: Config) -> Path:
+    """Le fichier modifié depuis le tableau de bord (volume) s'il existe, sinon celui de l'image.
+    HORAIRES_FILE, quand il est donné, garde la priorité."""
+    modifie = Path(cfg.dossier_config) / "horaires.json"
+    if cfg.fichier_horaires == str(HORAIRES_PAR_DEFAUT) and modifie.is_file():
+        return modifie
+    return Path(cfg.fichier_horaires)
 
 
 def cle(nom: str) -> str:
@@ -146,7 +155,7 @@ def synchro_horaires(cfg: Config, service=None, aujourdhui: date | None = None) 
     aujourdhui = aujourdhui or maintenant.date()
     compteur = Compteur(cfg.dossier_etat)
     try:
-        for personne in charger(cfg.fichier_horaires):
+        for personne in charger(fichier_actif(cfg)):
             pcfg = replace(cfg, personne=personne["name"], cle_synchro=cle(personne["name"]),
                            couleur=personne.get("couleur", cfg.couleur) or None,
                            rappels=tuple(personne.get("rappels", ())))
