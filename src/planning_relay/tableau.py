@@ -30,7 +30,7 @@ from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 from .config import Config
-from .horaires import JOURS, TYPES, charger, creneaux, fichier_actif
+from .horaires import JOURS, TYPES, _position, charger, creneaux, fichier_actif
 
 log = logging.getLogger("planning_relay")
 
@@ -115,29 +115,132 @@ def revenir_a_l_image(cfg: Config) -> None:
         cible.unlink()
 
 
+GROUPES = 4          # lignes « jours + début + fin » proposées pour des horaires fixes
+SEMAINES_LIBRES = 2  # semaines vides proposées en plus du cycle, pour l'allonger
+
+
+# --- Conversions entre le JSON (format AbView) et le formulaire -------------------
+
+def _jours_semaine(courant: dict) -> list[str]:
+    """Un « HH:MM-HH:MM » (ou "") par jour, exceptions appliquées, d'une semaine de rotation."""
+    exc = courant.get("exceptions") or {}
+    return [
+        ((exc[j] or [""])[0] if exc.get(j) is not None else (courant.get("hours") or [""])[0])
+        for j in JOURS
+    ]
+
+
+def _depuis_jours(valeurs: list[str]) -> tuple[list[str], dict]:
+    """Inverse : les heures les plus fréquentes deviennent `hours`, les autres jours des `exceptions`."""
+    non_vides = [v for v in valeurs if v]
+    principal = max(set(non_vides), key=lambda v: (non_vides.count(v), -valeurs.index(v))) if non_vides else ""
+    exceptions = {j: ([v] if v else []) for j, v in zip(JOURS, valeurs) if v != principal}
+    return ([principal] if principal else []), exceptions
+
+
+def _groupes(planning: dict) -> list[tuple[str, str, list[str]]]:
+    """Jours qui partagent les mêmes heures : [(début, fin, [jours])]."""
+    par: dict[str, list[str]] = {}
+    for j in JOURS:
+        if c := (planning.get(j) or [""])[0]:
+            par.setdefault(c, []).append(j)
+    return [(c.partition("-")[0], c.partition("-")[2], jours) for c, jours in par.items()]
+
+
+def _heures(libelle: str, debut: str, fin: str) -> str:
+    if not debut and not fin:
+        return ""
+    if not (HEURE.match(debut) and HEURE.match(fin)):
+        raise ValueError(f"{libelle} : indiquer l'heure de début ET de fin (ou laisser vide pour un repos).")
+    return f"{debut}-{fin}"
+
+
+def _position_affichee(p: dict, aujourdhui: date) -> int:
+    n = len(p.get("rotation") or [])
+    return _position(p, aujourdhui, aujourdhui.isocalendar().week) + 1 if n else 1
+
+
 def appliquer_formulaire(regles: list[dict], champs: dict[str, list[str]]) -> list[dict]:
-    """Reporte les champs du formulaire (p<i>_…) sur une copie des règles ; ce qui n'est pas
-    affichable en formulaire (rotations) n'est pas touché."""
-    neuf = copy.deepcopy(regles)
+    """Reporte le formulaire sur une copie des règles (champs p<i>_…) : modifie les personnes,
+    retire celles cochées « supprimer », ajoute la nouvelle personne si elle a un nom."""
     un = lambda k: (champs.get(k) or [""])[0].strip()  # noqa: E731
-    for i, p in enumerate(neuf):
-        if p["type"] == "fixed":
-            planning = {}
-            for jour, libelle in zip(JOURS, LIBELLES):
-                debut, fin = un(f"p{i}_{jour}_debut"), un(f"p{i}_{jour}_fin")
-                if not debut and not fin:
-                    planning[jour] = []
-                    continue
-                if not (HEURE.match(debut) and HEURE.match(fin)):
-                    raise ValueError(f"{p['name']}, {libelle.lower()} : indiquer l'heure de début ET de fin (ou laisser vide pour un repos).")
-                planning[jour] = [f"{debut}-{fin}"]
-            p["schedule"] = planning
-        elif p["type"] == "allday":
-            p["days"] = [j for j in JOURS if f"p{i}_jour_{j}" in champs]
-            for k, alt in enumerate(p.get("alternating", [])):
-                if texte := un(f"p{i}_alt{k}"):
-                    alt["type"] = texte
+    neuf = []
+    for i, p in enumerate(regles):
+        if f"p{i}_suppr" in champs:
+            continue
+        p = copy.deepcopy(p)
+        _appliquer_personne(p, i, un, champs)
+        neuf.append(p)
+    i = len(regles)
+    if nom := un(f"p{i}_nom"):
+        p = {"name": nom, "type": un(f"p{i}_type") if un(f"p{i}_type") in {"fixed", "shift"} else "fixed"}
+        _appliquer_personne(p, i, un, champs)
+        neuf.append(p)
     return neuf
+
+
+def _appliquer_personne(p: dict, i: int, un, champs: dict) -> None:
+    nom = p["name"]
+    if p["type"] == "allday":
+        jour = un(f"p{i}_jour")
+        if jour not in JOURS:
+            raise ValueError(f"{nom} : choisir un jour.")
+        p["days"] = [jour]
+        for k, alt in enumerate(p.get("alternating", [])):
+            if texte := un(f"p{i}_alt{k}"):
+                alt["type"] = texte
+        return
+    if un(f"p{i}_type") in {"fixed", "shift"}:
+        p["type"] = un(f"p{i}_type")
+    if p["type"] == "fixed":
+        planning: dict[str, list[str]] = {j: [] for j in JOURS}
+        for k in range(int(un(f"p{i}_ng") or GROUPES)):
+            jours = [j for j in JOURS if f"p{i}_g{k}_{j}" in champs]
+            creneau = _heures(f"{nom}, ligne {k + 1}", un(f"p{i}_g{k}_debut"), un(f"p{i}_g{k}_fin"))
+            if not jours and not creneau:
+                continue
+            if not jours or not creneau:
+                raise ValueError(f"{nom}, ligne {k + 1} : cocher des jours ET indiquer début et fin.")
+            for j in jours:
+                if planning[j]:
+                    raise ValueError(f"{nom} : {LIBELLES[JOURS.index(j)].lower()} est dans deux lignes.")
+                planning[j] = [creneau]
+        p["schedule"] = planning
+        return
+    # Postes en rotation
+    lignes: list[dict | None] = []
+    for w in range(int(un(f"p{i}_ns") or 0)):
+        poste = un(f"p{i}_s{w}_poste")
+        valeurs = [_heures(f"{nom}, semaine {w + 1}, {l.lower()}", un(f"p{i}_s{w}_{j}_debut"), un(f"p{i}_s{w}_{j}_fin"))
+                   for j, l in zip(JOURS, LIBELLES)]
+        if not poste and not any(valeurs):
+            lignes.append(None)
+            continue
+        if not poste:
+            raise ValueError(f"{nom}, semaine {w + 1} : indiquer le nom du poste (Matin, Soir, Nuit…).")
+        hours, exceptions = _depuis_jours(valeurs)
+        lignes.append({"week": w + 1, "shift": poste, "hours": hours, "exceptions": exceptions})
+    while lignes and lignes[-1] is None:
+        lignes.pop()
+    if not lignes:
+        raise ValueError(f"{nom} : au moins une semaine dans le cycle.")
+    if None in lignes:
+        raise ValueError(f"{nom} : une semaine vide au milieu du cycle ; remplir ou décaler les suivantes.")
+    p["rotation"] = [dict(ligne, week=n + 1) for n, ligne in enumerate(lignes)]
+    if "cycleLength" in p:
+        p["cycleLength"] = len(lignes)
+    try:
+        position = int(un(f"p{i}_pos") or 1)
+        origine = int(un(f"p{i}_pos0") or 1)
+        annee, semaine = (int(x) for x in un(f"p{i}_ancre").split("-"))
+    except ValueError:
+        raise ValueError(f"{nom} : position dans le cycle illisible.") from None
+    if not 1 <= position <= len(lignes):
+        raise ValueError(f"{nom} : la position dans le cycle va de 1 à {len(lignes)}.")
+    nouveau = "cycleAnchor" not in p and "offset" not in p
+    if position != origine or nouveau:
+        p["cycleAnchor"] = {"year": annee, "week": semaine, "position": position - 1}
+        p.pop("offset", None)
 
 
 # --- Page ----------------------------------------------------------------------
@@ -146,15 +249,19 @@ STYLE = """
 :root{--fond:#f6f7f9;--carte:#fff;--texte:#1d2330;--doux:#667085;--bord:#d9dde5;--accent:#2f5bd8;--ok:#0b7a43;--ko:#b42318}
 @media(prefers-color-scheme:dark){:root{--fond:#14171e;--carte:#1c212b;--texte:#e8eaf0;--doux:#99a1b3;--bord:#323948;--accent:#7ea2ff;--ok:#4cc38a;--ko:#ff8a80}}
 *{box-sizing:border-box}body{margin:0;background:var(--fond);color:var(--texte);font:16px/1.45 system-ui,sans-serif}
-main{max-width:760px;margin:0 auto;padding:16px}h1{font-size:1.4rem;margin:.2em 0}h2{font-size:1.1rem;margin:0 0 .6em}
+main{max-width:760px;margin:0 auto;padding:16px}h1{font-size:1.4rem;margin:.2em 0}h2{font-size:1.1rem;margin:0 0 .6em}h3{font-size:1rem;margin:.9em 0 .3em}
 .carte{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:16px;margin:14px 0}
 .jour{display:grid;grid-template-columns:6.5em 1fr 1fr;gap:8px;align-items:center;margin:6px 0}
-input,textarea,button{font:inherit}input[type=time],input[type=text]{padding:6px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);color:var(--texte);width:100%}
+.ligne-fixe{border:1px solid var(--bord);border-radius:10px;padding:10px;margin:8px 0}
+input,textarea,button{font:inherit}input[type=time],input[type=text],input[type=number]{padding:6px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);color:var(--texte);width:100%}
+input[type=number]{width:5em}.heures{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 textarea{width:100%;min-height:22em;font-family:ui-monospace,monospace;font-size:.85rem;padding:8px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);color:var(--texte)}
 button{padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
 button.sec{background:transparent;color:var(--accent)}.doux{color:var(--doux);font-size:.9rem}
 .ok{color:var(--ok);font-weight:600}.ko{color:var(--ko);font-weight:600}label.case{margin-right:12px;white-space:nowrap}
 .apercu{font-size:.9rem;color:var(--doux);margin-top:8px}form.ligne{display:inline}
+details.semaine{border:1px solid var(--bord);border-radius:10px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}
+.danger{margin-top:12px;font-size:.9rem;color:var(--doux)}
 @media(max-width:480px){.jour{grid-template-columns:5em 1fr 1fr}}
 """
 
@@ -173,37 +280,100 @@ def _apercu(p: dict, aujourdhui: date) -> str:
     )
 
 
+def _section_fixe(i: int, p: dict) -> str:
+    h = escape
+    groupes = _groupes(p.get("schedule") or {})
+    n = max(GROUPES, len(groupes) + 1)
+    lignes = [f'<input type="hidden" name="p{i}_ng" value="{n}">']
+    for k in range(n):
+        debut, fin, jours = groupes[k] if k < len(groupes) else ("", "", [])
+        cases = "".join(
+            f'<label class="case"><input type="checkbox" name="p{i}_g{k}_{j}"{" checked" if j in jours else ""}> {l[:3]}</label>'
+            for j, l in zip(JOURS, LIBELLES))
+        lignes.append(
+            f'<div class="ligne-fixe"><div>{cases}</div><div class="heures">'
+            f'<input type="time" name="p{i}_g{k}_debut" value="{h(debut)}" aria-label="Début, ligne {k + 1}">'
+            f'<input type="time" name="p{i}_g{k}_fin" value="{h(fin)}" aria-label="Fin, ligne {k + 1}"></div></div>')
+    return ('<p class="doux">Une ligne = des jours + une heure de début et de fin. '
+            'Les jours sans ligne sont des repos. Deux lignes si les heures changent un jour (ex. le mercredi).</p>'
+            + "".join(lignes))
+
+
+def _section_postes(i: int, p: dict, aujourdhui: date) -> str:
+    h = escape
+    rotation = p.get("rotation") or []
+    n = len(rotation) + SEMAINES_LIBRES
+    iso = aujourdhui.isocalendar()
+    pos = _position_affichee(p, aujourdhui)
+    out = [
+        f'<input type="hidden" name="p{i}_ns" value="{n}">'
+        f'<input type="hidden" name="p{i}_ancre" value="{aujourdhui.year}-{iso.week}">'
+        f'<input type="hidden" name="p{i}_pos0" value="{pos}">'
+        f'<p>Cette semaine (n° {iso.week}) est la semaine n° '
+        f'<input type="number" min="1" max="{max(len(rotation), 1)}" name="p{i}_pos" value="{pos}" aria-label="Position dans le cycle"> '
+        f'du cycle de {len(rotation) or "…"} semaine(s).</p>'
+        '<p class="doux">Le cycle se répète dans l\'ordre ci-dessous. Chaque semaine : le poste, puis les heures de chaque jour '
+        '(vide = repos). Les semaines vides en fin de liste servent à allonger le cycle.</p>']
+    for w in range(n):
+        courant = rotation[w] if w < len(rotation) else {}
+        valeurs = _jours_semaine(courant) if courant else [""] * 7
+        poste = courant.get("shift", "")
+        resume = poste or "(vide)"
+        jours = []
+        for j, l, v in zip(JOURS, LIBELLES, valeurs):
+            d, _, f = v.partition("-")
+            jours.append(
+                f'<div class="jour"><span>{l}</span>'
+                f'<input type="time" name="p{i}_s{w}_{j}_debut" value="{h(d)}" aria-label="{l} début">'
+                f'<input type="time" name="p{i}_s{w}_{j}_fin" value="{h(f)}" aria-label="{l} fin"></div>')
+        out.append(
+            f'<details class="semaine"><summary>Semaine {w + 1} du cycle — {h(resume)}</summary>'
+            f'<p>Poste : <input type="text" name="p{i}_s{w}_poste" value="{h(poste)}" placeholder="Matin, Soir, Nuit…"></p>'
+            + "".join(jours) + "</details>")
+    return "".join(out)
+
+
+def _carte(i: int, p: dict, aujourdhui: date) -> str:
+    h = escape
+    bloc = [f'<section class="carte"><h2>{h(p["name"])}</h2>']
+    if p["type"] == "allday":
+        jour = (p.get("days") or [""])[0]
+        bloc.append("<p>Jour de ramassage :</p><p>" + "".join(
+            f'<label class="case"><input type="radio" name="p{i}_jour" value="{j}"{" checked" if j == jour else ""}> {l}</label>'
+            for j, l in zip(JOURS, LIBELLES)) + "</p>")
+        bloc.append('<p class="doux">Événement sur la journée entière ; la couleur alterne chaque semaine :</p>')
+        for k, alt in enumerate(p.get("alternating", [])):
+            parite = "Semaines paires" if alt["weekMod2"] == 0 else "Semaines impaires"
+            bloc.append(f'<div class="jour"><span>{parite}</span>'
+                        f'<input type="text" name="p{i}_alt{k}" value="{h(str(alt.get("type", "")))}" aria-label="{parite}"></div>')
+    else:
+        shift = p["type"] == "shift"
+        radio = lambda v, t, coche: (f'<label class="case"><input type="radio" name="p{i}_type" value="{v}"'  # noqa: E731
+                                     f'{" checked" if coche else ""}> {t}</label>')
+        bloc.append("<p>" + radio("fixed", "Horaires fixes (pas de postes)", not shift)
+                    + radio("shift", "Postes en rotation", shift) + "</p>")
+        bloc.append(f'<details{"" if shift else " open"}><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, p)}</details>')
+        bloc.append(f'<details{" open" if shift else ""}><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, p, aujourdhui)}</details>')
+        bloc.append('<p class="doux">Seule la partie choisie ci-dessus est utilisée.</p>')
+    bloc.append(f'<div class="apercu">7 prochains jours : {h(_apercu(p, aujourdhui))}</div>')
+    bloc.append(f'<label class="danger"><input type="checkbox" name="p{i}_suppr"> Supprimer {h(p["name"])} '
+                '(ses événements disparaissent de l\'agenda au prochain passage)</label></section>')
+    return "".join(bloc)
+
+
 def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "", modifie: bool = False,
          historique: list[str] | None = None, aujourdhui: date | None = None) -> str:
     aujourdhui = aujourdhui or date.today()
     h = escape
     jt = f'<input type="hidden" name="jeton" value="{h(jeton)}">'
-    corps = []
-    for i, p in enumerate(regles):
-        bloc = [f'<section class="carte"><h2>{h(p["name"])}</h2>']
-        if p["type"] == "fixed":
-            sched = p.get("schedule", {})
-            for jour, libelle in zip(JOURS, LIBELLES):
-                creneau = (sched.get(jour) or [""])[0]
-                debut, _, fin = creneau.partition("-")
-                bloc.append(
-                    f'<div class="jour"><span>{libelle}</span>'
-                    f'<input type="time" name="p{i}_{jour}_debut" value="{h(debut)}" aria-label="{libelle} début">'
-                    f'<input type="time" name="p{i}_{jour}_fin" value="{h(fin)}" aria-label="{libelle} fin"></div>'
-                )
-            bloc.append('<p class="doux">Les deux champs vides = repos.</p>')
-        elif p["type"] == "allday":
-            bloc.append("<p>Jours de ramassage :</p><p>" + "".join(
-                f'<label class="case"><input type="checkbox" name="p{i}_jour_{j}"{" checked" if j in p.get("days", []) else ""}> {l}</label>'
-                for j, l in zip(JOURS, LIBELLES)) + "</p>")
-            for k, alt in enumerate(p.get("alternating", [])):
-                parite = "semaines paires" if alt["weekMod2"] == 0 else "semaines impaires"
-                bloc.append(f'<div class="jour"><span>{parite}</span>'
-                            f'<input type="text" name="p{i}_alt{k}" value="{h(str(alt.get("type", "")))}" aria-label="{parite}"></div>')
-        else:
-            bloc.append('<p class="doux">Rotation de postes : à modifier dans « Avancé » (JSON brut) ci-dessous.</p>')
-        bloc.append(f'<div class="apercu">7 prochains jours : {h(_apercu(p, aujourdhui))}</div></section>')
-        corps.append("".join(bloc))
+    corps = [_carte(i, p, aujourdhui) for i, p in enumerate(regles)]
+    i = len(regles)
+    corps.append(
+        f'<section class="carte"><h2>Ajouter une personne</h2><p>Nom : <input type="text" name="p{i}_nom" placeholder="laisser vide pour ne rien ajouter"></p>'
+        f'<p><label class="case"><input type="radio" name="p{i}_type" value="fixed" checked> Horaires fixes</label>'
+        f'<label class="case"><input type="radio" name="p{i}_type" value="shift"> Postes en rotation</label></p>'
+        f'<details><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, {})}</details>'
+        f'<details><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, {}, aujourdhui)}</details></section>')
     etat = "Horaires modifiés depuis ce tableau de bord." if modifie else "Horaires livrés avec l'image (aucune modification)."
     notif = (f'<p class="ok" role="status">{h(message)}</p>' if message else "") + (
         f'<p class="ko" role="alert">{h(erreur)}</p>' if erreur else "")
@@ -216,7 +386,7 @@ def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "",
 <title>Horaires — tableau de bord</title><style>{STYLE}</style></head><body><main>
 <h1>Horaires et poubelle</h1><p class="doux">{h(etat)} Pris en compte au prochain passage (à l'heure pile).</p>{notif}
 <form method="post" action="/enregistrer">{jt}{"".join(corps)}<button>Enregistrer</button></form>
-<section class="carte"><h2>Avancé</h2><details><summary>JSON brut (rotations, exceptions, semaines particulières)</summary>
+<section class="carte"><h2>Avancé</h2><details><summary>JSON brut (semaines particulières, couleurs, rappels)</summary>
 <form method="post" action="/brut">{jt}<textarea name="json" spellcheck="false">{brut}</textarea><p><button>Enregistrer le JSON</button></p></form></details>
 {"<p class='doux'>Versions précédentes :</p>" + hist if hist else ""}
 {f'<form method="post" action="/image">{jt}<p><button class="sec">Revenir aux horaires de l&#39;image</button></p></form>' if modifie else ""}
