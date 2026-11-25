@@ -267,3 +267,21 @@ def test_http_enregistrement_complet(serveur, cfg):
 def test_http_erreur_affichee_sans_rien_ecrire(serveur, cfg):
     statut, html = requete(serveur, "POST", "/brut", {"jeton": "JT", "json": "{pas du json"})
     assert statut == 200 and "JSON invalide" in html and fichier_actif(cfg) == HORAIRES_PAR_DEFAUT
+
+
+def test_poubelle_heure_et_rappels_dans_le_formulaire(cfg):
+    i = idx(cfg, "Poubelle")
+    champs = formulaire(cfg)
+    assert champs[f"p{i}_debut"] == ["22:00"] and champs[f"p{i}_rappels"] == ["4, 2"]
+    poubelle = appliquer(cfg, **{f"p{i}_debut": "21:00", f"p{i}_fin": "21:30", f"p{i}_rappels": "3; 1.5, 0.5"})[i]
+    assert poubelle["hours"] == ["21:00-21:30"] and poubelle["rappels"] == [180, 90, 30]
+    sans_heure = appliquer(cfg, **{f"p{i}_debut": "", f"p{i}_fin": ""})[i]
+    assert "hours" not in sans_heure  # journée entière
+
+
+def test_rappels_illisibles_ou_hors_limites_refuses(cfg):
+    i = idx(cfg, "Poubelle")
+    with pytest.raises(ValueError, match="rappels illisibles"):
+        appliquer(cfg, **{f"p{i}_rappels": "bientôt"})
+    with pytest.raises(ValueError, match="0 à 672"):
+        appliquer(cfg, **{f"p{i}_rappels": "700"})

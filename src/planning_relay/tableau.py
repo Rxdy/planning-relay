@@ -155,6 +155,24 @@ def _heures(libelle: str, debut: str, fin: str) -> str:
     return f"{debut}-{fin}"
 
 
+def _rappels_texte(p: dict) -> str:
+    return ", ".join(f"{m / 60:g}" for m in p.get("rappels") or [])
+
+
+def _appliquer_rappels(p: dict, i: int, un) -> None:
+    """« 4, 2 » (heures avant le début) → [240, 120] minutes ; vide : aucun rappel."""
+    texte = un(f"p{i}_rappels")
+    if not texte and "rappels" not in p:
+        return
+    try:
+        minutes = sorted({round(float(x) * 60) for x in texte.replace(";", ",").split(",") if x.strip()}, reverse=True)
+    except ValueError:
+        raise ValueError(f"{p['name']} : rappels illisibles (« 4, 2 » = 4 h et 2 h avant ; point pour les décimales).") from None
+    if any(m < 0 or m > 40320 for m in minutes):
+        raise ValueError(f"{p['name']} : un rappel va de 0 à 672 heures avant.")
+    p["rappels"] = minutes
+
+
 def _position_affichee(p: dict, aujourdhui: date) -> int:
     n = len(p.get("rotation") or [])
     return _position(p, aujourdhui, aujourdhui.isocalendar().week) + 1 if n else 1
@@ -186,9 +204,15 @@ def _appliquer_personne(p: dict, i: int, un, champs: dict) -> None:
         if jour not in JOURS:
             raise ValueError(f"{nom} : choisir un jour.")
         p["days"] = [jour]
+        creneau = _heures(f"{nom}, heure", un(f"p{i}_debut"), un(f"p{i}_fin"))
+        if creneau:
+            p["hours"] = [creneau]
+        else:
+            p.pop("hours", None)  # journée entière
         for k, alt in enumerate(p.get("alternating", [])):
             if texte := un(f"p{i}_alt{k}"):
                 alt["type"] = texte
+        _appliquer_rappels(p, i, un)
         return
     if un(f"p{i}_type") in {"fixed", "shift"}:
         p["type"] = un(f"p{i}_type")
@@ -206,6 +230,7 @@ def _appliquer_personne(p: dict, i: int, un, champs: dict) -> None:
                     raise ValueError(f"{nom} : {LIBELLES[JOURS.index(j)].lower()} est dans deux lignes.")
                 planning[j] = [creneau]
         p["schedule"] = planning
+        _appliquer_rappels(p, i, un)
         return
     # Postes en rotation
     lignes: list[dict | None] = []
@@ -227,6 +252,7 @@ def _appliquer_personne(p: dict, i: int, un, champs: dict) -> None:
     if None in lignes:
         raise ValueError(f"{nom} : une semaine vide au milieu du cycle ; remplir ou décaler les suivantes.")
     p["rotation"] = [dict(ligne, week=n + 1) for n, ligne in enumerate(lignes)]
+    _appliquer_rappels(p, i, un)
     if "cycleLength" in p:
         p["cycleLength"] = len(lignes)
     try:
@@ -341,7 +367,11 @@ def _carte(i: int, p: dict, aujourdhui: date) -> str:
         bloc.append("<p>Jour de ramassage :</p><p>" + "".join(
             f'<label class="case"><input type="radio" name="p{i}_jour" value="{j}"{" checked" if j == jour else ""}> {l}</label>'
             for j, l in zip(JOURS, LIBELLES)) + "</p>")
-        bloc.append('<p class="doux">Événement sur la journée entière ; la couleur alterne chaque semaine :</p>')
+        debut, _, fin = (p.get("hours") or [""])[0].partition("-")
+        bloc.append('<p>Heure de l\'événement :</p><div class="heures">'
+                    f'<input type="time" name="p{i}_debut" value="{h(debut)}" aria-label="Début">'
+                    f'<input type="time" name="p{i}_fin" value="{h(fin)}" aria-label="Fin"></div>'
+                    '<p class="doux">Vide = journée entière. La couleur alterne chaque semaine :</p>')
         for k, alt in enumerate(p.get("alternating", [])):
             parite = "Semaines paires" if alt["weekMod2"] == 0 else "Semaines impaires"
             bloc.append(f'<div class="jour"><span>{parite}</span>'
@@ -355,6 +385,8 @@ def _carte(i: int, p: dict, aujourdhui: date) -> str:
         bloc.append(f'<details{"" if shift else " open"}><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, p)}</details>')
         bloc.append(f'<details{" open" if shift else ""}><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, p, aujourdhui)}</details>')
         bloc.append('<p class="doux">Seule la partie choisie ci-dessus est utilisée.</p>')
+    bloc.append(f'<p>Rappels, en heures avant le début : <input type="text" name="p{i}_rappels" value="{h(_rappels_texte(p))}" '
+                'placeholder="ex. 4, 2" aria-label="Rappels"></p>')
     bloc.append(f'<div class="apercu">7 prochains jours : {h(_apercu(p, aujourdhui))}</div>')
     bloc.append(f'<label class="danger"><input type="checkbox" name="p{i}_suppr"> Supprimer {h(p["name"])} '
                 '(ses événements disparaissent de l\'agenda au prochain passage)</label></section>')

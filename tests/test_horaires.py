@@ -62,13 +62,18 @@ def test_caroline_cycle_ancre_et_vendredi_raccourci():
     }
 
 
-def test_poubelle_le_jeudi_jaune_et_noire_en_alternance():
-    # S42 paire → Jaune, S43 impaire → Noire ; journée entière, catégorie poubelle
+def test_poubelle_le_jeudi_a_22h_jaune_et_noire_en_alternance():
+    # S42 paire → Jaune, S43 impaire → Noire ; 22h-22h30, catégorie poubelle
     jeudis = creneaux(REGLES["Poubelle"], LUNDI, date(2026, 10, 25))
-    assert [(c.jour, c.poste, c.journee_entiere, c.categorie) for c in jeudis] == [
-        (date(2026, 10, 15), "Jaune", True, "poubelle"),
-        (date(2026, 10, 22), "Noire", True, "poubelle"),
+    assert [(c.jour, c.poste, c.debut, c.fin, c.categorie) for c in jeudis] == [
+        (date(2026, 10, 15), "Jaune", time(22, 0), time(22, 30), "poubelle"),
+        (date(2026, 10, 22), "Noire", time(22, 0), time(22, 30), "poubelle"),
     ]
+
+
+def test_poubelle_sans_heure_reste_sur_la_journee_entiere():
+    regle = {k: v for k, v in REGLES["Poubelle"].items() if k != "hours"}
+    assert [(c.poste, c.journee_entiere) for c in creneaux(regle, LUNDI, date(2026, 10, 25))] == [("Jaune", True), ("Noire", True)]
 
 
 def test_semaine_modifiee_remplace_la_rotation():
@@ -136,13 +141,13 @@ def test_horaires_fixes_titre_prenom_seul():
     assert len(_stock(agenda)) == 10  # 2 semaines, du lundi au vendredi
 
 
-def test_poubelle_journee_entiere_dans_l_agenda():
+def test_poubelle_a_22h_dans_l_agenda():
     cfg, agenda = _agenda("Poubelle")
     passage_horaires(cfg, REGLES["Poubelle"], agenda, LUNDI)
-    evs = sorted(_stock(agenda).values(), key=lambda e: e["start"]["date"])
-    assert [(e["summary"], e["start"], e["end"]) for e in evs] == [
-        ("Poubelle — Jaune", {"date": "2026-10-15"}, {"date": "2026-10-16"}),
-        ("Poubelle — Noire", {"date": "2026-10-22"}, {"date": "2026-10-23"}),
+    evs = sorted(_stock(agenda).values(), key=lambda e: e["start"]["dateTime"])
+    assert [(e["summary"], e["start"]["dateTime"][:16], e["end"]["dateTime"][:16]) for e in evs] == [
+        ("Poubelle — Jaune", "2026-10-15T22:00", "2026-10-15T22:30"),
+        ("Poubelle — Noire", "2026-10-22T22:00", "2026-10-22T22:30"),
     ]
     assert {e["extendedProperties"]["private"]["categorie"] for e in evs} == {"poubelle"}
     # Relue depuis l'agenda, la catégorie ne déclenche ni correction ni changement
@@ -207,7 +212,7 @@ def test_synchro_travail_en_paon_et_poubelle_sans_couleur(tmp_path):
                         ("horaires-caroline", "7"), ("horaires-poubelle", None)}
 
 
-def test_aucun_poste_ni_la_poubelle_n_a_de_notification(tmp_path):
+def test_seule_la_poubelle_a_des_rappels_4_h_et_2_h_avant(tmp_path):
     service = FauxService()
     synchro_horaires(replace(CFG, dossier_etat=str(tmp_path)), service=service, aujourdhui=LUNDI)
     rappels = {(e["extendedProperties"]["private"][PROP], str(e["reminders"])) for e in service.events().stock.values()}
@@ -215,7 +220,8 @@ def test_aucun_poste_ni_la_poubelle_n_a_de_notification(tmp_path):
     assert rappels == {
         ("horaires-rudy", attendu_travail), ("horaires-lea", attendu_travail),
         ("horaires-luis", attendu_travail), ("horaires-caroline", attendu_travail),
-        ("horaires-poubelle", attendu_travail),
+        ("horaires-poubelle", str({"useDefault": False, "overrides": [
+            {"method": "popup", "minutes": 240}, {"method": "popup", "minutes": 120}]})),
     }
 
 
@@ -225,3 +231,13 @@ def test_synchro_compte_les_echecs(tmp_path):
     from planning_relay.alerte import Compteur
 
     assert Compteur(str(tmp_path)).lire() == 1
+
+
+def test_poubelle_passe_de_la_journee_entiere_a_22h_sans_doublon():
+    cfg, agenda = _agenda("Poubelle")
+    avant = {k: v for k, v in REGLES["Poubelle"].items() if k not in {"hours", "rappels"}}
+    passage_horaires(cfg, avant, agenda, LUNDI)
+    assert all("date" in e["start"] for e in _stock(agenda).values())
+    passage_horaires(cfg, REGLES["Poubelle"], agenda, LUNDI)
+    evs = list(_stock(agenda).values())
+    assert len(evs) == 2 and all("dateTime" in e["start"] for e in evs)
