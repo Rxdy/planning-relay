@@ -14,6 +14,7 @@ def main(argv: list[str] | None = None) -> int:
     sous = parser.add_subparsers(dest="commande", required=True)
     sous.add_parser("service", help="Conteneur permanent : un passage à chaque heure pile")
     sous.add_parser("sync", help="Un passage : lire, comparer, prévenir, publier")
+    sous.add_parser("tableau", help="Tableau de bord web des horaires et de la poubelle")
     sous.add_parser("sante", help="Santé du service, pour le HEALTHCHECK Docker")
     ap = sous.add_parser("apercu", help="Écrit les mails des scénarios types en HTML et texte")
     ap.add_argument("--dossier", default="apercus")
@@ -29,6 +30,11 @@ def main(argv: list[str] | None = None) -> int:
         from .service import lancer
 
         return lancer(cfg, synchro)
+
+    if args.commande == "tableau":
+        from .tableau import lancer_tableau
+
+        return lancer_tableau(cfg)
 
     if args.commande == "sante":
         from .service import sante
