@@ -16,11 +16,12 @@ Calcul repris d'AbView (calendarStore.ts) pour ne rien changer à l'affichage :
   d'un jour (une liste vide : pas de poste ce jour-là) ;
 - « allday » : journée entière certains jours (la poubelle du jeudi), avec en option
   une alternance par parité de semaine (`alternating`, Jaune / Noire) qui donne le poste.
-  Sa catégorie vient du champ `categorie`.
+  Sa catégorie vient du champ `categorie`. Avec `hours` (ex. ["22:00-22:30"]), l'événement a
+  une heure au lieu d'être sur la journée : la poubelle, le jeudi soir, avec ses rappels.
 La couleur Google Agenda est EVENT_COLOR_ID (Paon, le travail) ; une personne peut
 la remplacer par son champ `couleur` ("" : pas de couleur, ex. la poubelle).
 Pas de notification, sauf `rappels` (minutes avant le début ; pour une journée
-entière, avant minuit). La poubelle n'en a pas : l'événement est déjà la veille du ramassage.
+entière, avant minuit). La poubelle en a : à 22h le soir de la sortie, avec des rappels 4 h et 2 h avant.
 Les semaines sont numérotées à l'ISO, combinées avec l'année civile, comme dans AbView.
 """
 
@@ -35,7 +36,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .comparaison import comparer
-from .config import Config
+from .config import HORAIRES_PAR_DEFAUT, Config
 from .modeles import Changement, Creneau
 from .synchro import etape, fenetre
 
@@ -51,6 +52,15 @@ def charger(chemin: str | Path) -> list[dict]:
         if not p.get("name") or p.get("type") not in TYPES:
             raise ValueError(f"Personne invalide dans {chemin} : {p.get('name')!r} ({p.get('type')!r})")
     return regles
+
+
+def fichier_actif(cfg: Config) -> Path:
+    """Le fichier modifié depuis le tableau de bord (volume) s'il existe, sinon celui de l'image.
+    HORAIRES_FILE, quand il est donné, garde la priorité."""
+    modifie = Path(cfg.dossier_config) / "horaires.json"
+    if cfg.fichier_horaires == str(HORAIRES_PAR_DEFAUT) and modifie.is_file():
+        return modifie
+    return Path(cfg.fichier_horaires)
 
 
 def cle(nom: str) -> str:
@@ -75,7 +85,7 @@ def horaires_du_jour(personne: dict, jour: date) -> tuple[str, list[str]]:
             return "", []
         parite = jour.isocalendar().week % 2
         alterne = next((a["type"] for a in personne.get("alternating", []) if a["weekMod2"] == parite), "")
-        return alterne, ["journée"]
+        return alterne, personne.get("hours") or ["journée"]
     if personne["type"] == "fixed":
         return "", personne.get("schedule", {}).get(nom_jour) or []
 
@@ -100,17 +110,18 @@ def creneaux(personne: dict, debut: date, fin: date) -> list[Creneau]:
         poste, heures = horaires_du_jour(personne, jour)
         if len(heures) > 1:
             raise ValueError(f"{personne['name']} : un seul créneau par jour ({jour}, {heures})")
-        if heures and personne["type"] == "allday":
+        if heures == ["journée"]:
             resultat.append(Creneau(jour=jour, code=poste or personne["name"], poste=poste,
                                     categorie=personne.get("categorie")))
         elif heures:
             h_debut, h_fin = heures[0].split("-")
             resultat.append(Creneau(
                 jour=jour,
-                code=poste or "Travail",
+                code=poste or (personne["name"] if personne["type"] == "allday" else "Travail"),
                 debut=time.fromisoformat(h_debut),
                 fin=time.fromisoformat(h_fin),
                 poste=poste,
+                categorie=personne.get("categorie"),
             ))
         jour += timedelta(days=1)
     return resultat
@@ -146,7 +157,7 @@ def synchro_horaires(cfg: Config, service=None, aujourdhui: date | None = None) 
     aujourdhui = aujourdhui or maintenant.date()
     compteur = Compteur(cfg.dossier_etat)
     try:
-        for personne in charger(cfg.fichier_horaires):
+        for personne in charger(fichier_actif(cfg)):
             pcfg = replace(cfg, personne=personne["name"], cle_synchro=cle(personne["name"]),
                            couleur=personne.get("couleur", cfg.couleur) or None,
                            rappels=tuple(personne.get("rappels", ())))

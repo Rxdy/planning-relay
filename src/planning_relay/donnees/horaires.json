@@ -144,6 +144,8 @@
     "categorie": "poubelle",
     "couleur": "",
     "days": ["thursday"],
+    "hours": ["22:00-22:30"],
+    "rappels": [240, 120],
     "alternating": [
       { "weekMod2": 0, "type": "Jaune" },
       { "weekMod2": 1, "type": "Noire" }
