@@ -74,7 +74,7 @@ kidsync (dépôt `Rxdy/kidsync`) relève le planning du portail MJC et le sert e
 ## Publier une version
 
 ```
-scripts/release.sh 1.4.0
+make release V=1.4.0
 ```
 
-Depuis `main` à jour et propre : pose le tag `v1.4.0` et le pousse. La CI teste, construit les images (`:v1.4.0` et `:latest`) puis crée la Release GitHub avec ses notes ; Watchtower installe la nouvelle image sur le Pi. **Un simple push sur `main` ne déploie rien.** Pour figer une version sur le Pi, mettre l'image en `:v1.4.0` au lieu de `:latest` dans son compose.
+Les images se construisent à la fusion dans `dev`, une seule fois, et seulement pour les services dont les sources ont changé. Fusionner `dev` dans `staging`, puis `staging` dans `main`, reprend les mêmes images sans les reconstruire : elles reçoivent le tag `staging`, puis `prod` et `latest`, et Watchtower installe `latest` sur le Pi. `make release V=1.4.0` (ou `scripts/release.sh 1.4.0`), lancé depuis `main` à jour et propre, pose le tag `v1.4.0`. La CI ajoute ce tag aux images de la prod et crée la Release GitHub avec le manifeste, qui donne l'image exacte de chaque service. Pour figer une version sur le Pi, mettre l'image en `:v1.4.0` au lieu de `:latest` dans son compose. Les images jamais promues sont supprimées au bout de 14 jours.
