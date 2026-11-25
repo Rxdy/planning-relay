@@ -309,21 +309,21 @@ def _appliquer_personne(p: dict, i: int, un, champs: dict) -> None:
 STYLE = """
 :root{--fond:#f6f7f9;--carte:#fff;--texte:#1d2330;--doux:#667085;--bord:#d9dde5;--accent:#2f5bd8;--ok:#0b7a43;--ko:#b42318}
 @media(prefers-color-scheme:dark){:root{--fond:#14171e;--carte:#1c212b;--texte:#e8eaf0;--doux:#99a1b3;--bord:#323948;--accent:#7ea2ff;--ok:#4cc38a;--ko:#ff8a80}}
-*{box-sizing:border-box}body{margin:0;background:var(--fond);color:var(--texte);font:16px/1.45 system-ui,sans-serif}
+*{box-sizing:border-box;min-width:0}html{-webkit-text-size-adjust:100%}body{overflow-wrap:anywhere;margin:0;background:var(--fond);color:var(--texte);font:16px/1.45 system-ui,sans-serif}
 main{max-width:760px;margin:0 auto;padding:16px}h1{font-size:1.4rem;margin:.2em 0}h2{font-size:1.1rem;margin:0 0 .6em}h3{font-size:1rem;margin:.9em 0 .3em}
 .carte{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:16px;margin:14px 0}
-.jour{display:grid;grid-template-columns:6.5em 1fr 1fr;gap:8px;align-items:center;margin:6px 0}
-.ligne-fixe{border:1px solid var(--bord);border-radius:10px;padding:10px;margin:8px 0}
+.jour{display:grid;grid-template-columns:6.5em minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;margin:6px 0}
+.cases{display:flex;flex-wrap:wrap;gap:4px 12px}.cases label.case{margin:0}.ligne-fixe{border:1px solid var(--bord);border-radius:10px;padding:10px;margin:8px 0}
 input,textarea,button{font:inherit}input[type=time],input[type=text],input[type=number]{padding:6px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);color:var(--texte);width:100%}
-input[type=number]{width:5em}.heures{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+input[type=number]{width:5em}input[type=time]{min-width:0;max-width:100%}p input[type=text]{margin-top:4px}.heures{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:8px}
 textarea{width:100%;min-height:22em;font-family:ui-monospace,monospace;font-size:.85rem;padding:8px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);color:var(--texte)}
 button{padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
 button.sec{background:transparent;color:var(--accent)}.doux{color:var(--doux);font-size:.9rem}
-.ok{color:var(--ok);font-weight:600}.ko{color:var(--ko);font-weight:600}label.case{margin-right:12px;white-space:nowrap}
+.ok{color:var(--ok);font-weight:600}.ko{color:var(--ko);font-weight:600}label.case{margin-right:12px}
 .apercu{font-size:.9rem;color:var(--doux);margin-top:8px}form.ligne{display:inline}
 details.semaine{border:1px solid var(--bord);border-radius:10px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}
 .danger{margin-top:12px;font-size:.9rem;color:var(--doux)}
-@media(max-width:480px){.jour{grid-template-columns:5em 1fr 1fr}}
+@media(max-width:480px){main{padding:10px}.carte{padding:12px}.jour{grid-template-columns:4.5em minmax(0,1fr) minmax(0,1fr)}}
 """
 
 
@@ -352,7 +352,7 @@ def _section_fixe(i: int, p: dict) -> str:
             f'<label class="case"><input type="checkbox" name="p{i}_g{k}_{j}"{" checked" if j in jours else ""}> {l[:3]}</label>'
             for j, l in zip(JOURS, LIBELLES))
         lignes.append(
-            f'<div class="ligne-fixe"><div>{cases}</div><div class="heures">'
+            f'<div class="ligne-fixe"><div class="cases">{cases}</div><div class="heures">'
             f'<input type="time" name="p{i}_g{k}_debut" value="{h(debut)}" aria-label="Début, ligne {k + 1}">'
             f'<input type="time" name="p{i}_g{k}_fin" value="{h(fin)}" aria-label="Fin, ligne {k + 1}"></div></div>')
     return ('<p class="doux">Une ligne = des jours + une heure de début et de fin. '
@@ -415,8 +415,8 @@ def _carte(i: int, p: dict, aujourdhui: date) -> str:
         shift = p["type"] == "shift"
         radio = lambda v, t, coche: (f'<label class="case"><input type="radio" name="p{i}_type" value="{v}"'  # noqa: E731
                                      f'{" checked" if coche else ""}> {t}</label>')
-        bloc.append("<p>" + radio("fixed", "Horaires fixes (pas de postes)", not shift)
-                    + radio("shift", "Postes en rotation", shift) + "</p>")
+        bloc.append('<div class="cases">' + radio("fixed", "Horaires fixes (pas de postes)", not shift)
+                    + radio("shift", "Postes en rotation", shift) + "</div>")
         bloc.append(f'<details{"" if shift else " open"}><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, p)}</details>')
         bloc.append(f'<details{" open" if shift else ""}><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, p, aujourdhui)}</details>')
         bloc.append('<p class="doux">Seule la partie choisie ci-dessus est utilisée.</p>')
@@ -437,8 +437,8 @@ def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "",
     i = len(regles)
     corps.append(
         f'<section class="carte"><h2>Ajouter une personne</h2><p>Nom : <input type="text" name="p{i}_nom" placeholder="laisser vide pour ne rien ajouter"></p>'
-        f'<p><label class="case"><input type="radio" name="p{i}_type" value="fixed" checked> Horaires fixes</label>'
-        f'<label class="case"><input type="radio" name="p{i}_type" value="shift"> Postes en rotation</label></p>'
+        f'<div class="cases"><label class="case"><input type="radio" name="p{i}_type" value="fixed" checked> Horaires fixes</label>'
+        f'<label class="case"><input type="radio" name="p{i}_type" value="shift"> Postes en rotation</label></div>'
         f'<details><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, {})}</details>'
         f'<details><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, {}, aujourdhui)}</details></section>')
     nom = escape(str((abview or {}).get("name", "")))
