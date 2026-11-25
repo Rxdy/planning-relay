@@ -65,6 +65,41 @@ def valider(regles: object) -> list[dict]:
     return regles
 
 
+NOM_MAX = 40
+
+
+def fichier_abview(cfg: Config) -> Path:
+    return Path(cfg.dossier_config) / "abview.json"
+
+
+def lire_abview(cfg: Config) -> dict:
+    """Les réglages d'AbView modifiés ici ({} : ceux livrés avec AbView). Un fichier abîmé ne casse pas la page."""
+    try:
+        donnees = json.loads(fichier_abview(cfg).read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+    return donnees if isinstance(donnees, dict) else {}
+
+
+def enregistrer_abview(cfg: Config, nom: str) -> None:
+    """Le nom affiché dans l'en-tête d'AbView. Vide : on revient à celui livré avec AbView."""
+    nom = " ".join(nom.split())
+    if len(nom) > NOM_MAX or any(not c.isprintable() for c in nom):
+        raise ValueError(f"Le nom doit tenir en {NOM_MAX} caractères, sans caractère spécial.")
+    cible = fichier_abview(cfg)
+    donnees = {k: v for k, v in lire_abview(cfg).items() if k != "name"}
+    if nom:
+        donnees["name"] = nom
+    if not donnees:
+        cible.unlink(missing_ok=True)
+        return
+    cible.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cible.with_suffix(".tmp")
+    tmp.write_text(json.dumps(donnees, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, cible)
+    log.info("Réglages AbView modifiés depuis le tableau de bord")
+
+
 def lire(cfg: Config) -> list[dict]:
     return charger(fichier_actif(cfg))
 
@@ -394,7 +429,7 @@ def _carte(i: int, p: dict, aujourdhui: date) -> str:
 
 
 def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "", modifie: bool = False,
-         historique: list[str] | None = None, aujourdhui: date | None = None) -> str:
+         historique: list[str] | None = None, aujourdhui: date | None = None, abview: dict | None = None) -> str:
     aujourdhui = aujourdhui or date.today()
     h = escape
     jt = f'<input type="hidden" name="jeton" value="{h(jeton)}">'
@@ -406,6 +441,13 @@ def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "",
         f'<label class="case"><input type="radio" name="p{i}_type" value="shift"> Postes en rotation</label></p>'
         f'<details><summary><strong>Horaires fixes</strong></summary>{_section_fixe(i, {})}</details>'
         f'<details><summary><strong>Postes en rotation</strong></summary>{_section_postes(i, {}, aujourdhui)}</details></section>')
+    nom = escape(str((abview or {}).get("name", "")))
+    bloc_abview = (
+        f'<section class="carte"><h2>AbView</h2><form method="post" action="/abview">{jt}'
+        f'<p>Nom affiché dans l\'en-tête : <input type="text" name="nom" value="{nom}" maxlength="{NOM_MAX}" '
+        'placeholder="vide = le nom livré avec AbView" aria-label="Nom dans l\'en-tête"></p>'
+        '<p class="doux">Pris en compte quand AbView recharge sa configuration (au rechargement de la page de l\'écran).</p>'
+        '<button>Enregistrer le nom</button></form></section>')
     etat = "Horaires modifiés depuis ce tableau de bord." if modifie else "Horaires livrés avec l'image (aucune modification)."
     notif = (f'<p class="ok" role="status">{h(message)}</p>' if message else "") + (
         f'<p class="ko" role="alert">{h(erreur)}</p>' if erreur else "")
@@ -418,6 +460,7 @@ def page(regles: list[dict], jeton: str, *, message: str = "", erreur: str = "",
 <title>Horaires — tableau de bord</title><style>{STYLE}</style></head><body><main>
 <h1>Horaires et poubelle</h1><p class="doux">{h(etat)} Pris en compte au prochain passage (à l'heure pile).</p>{notif}
 <form method="post" action="/enregistrer">{jt}{"".join(corps)}<button>Enregistrer</button></form>
+{bloc_abview}
 <section class="carte"><h2>Avancé</h2><details><summary>JSON brut (semaines particulières, couleurs, rappels)</summary>
 <form method="post" action="/brut">{jt}<textarea name="json" spellcheck="false">{brut}</textarea><p><button>Enregistrer le JSON</button></p></form></details>
 {"<p class='doux'>Versions précédentes :</p>" + hist if hist else ""}
@@ -466,7 +509,7 @@ def _handler(cfg: Config, mdp: str, jeton: str):
         def _afficher(self, **kw) -> None:
             regles = kw.pop("regles", None) or lire(cfg)
             modifie = (Path(cfg.dossier_config) / "horaires.json").is_file()
-            self._repondre(page(regles, jeton, modifie=modifie, historique=sauvegardes(cfg), **kw))
+            self._repondre(page(regles, jeton, modifie=modifie, historique=sauvegardes(cfg), abview=lire_abview(cfg), **kw))
 
         def do_GET(self):
             if not self._autorise():
@@ -495,6 +538,9 @@ def _handler(cfg: Config, mdp: str, jeton: str):
                         raise ValueError(f"JSON invalide : {e}") from None
                     enregistrer(cfg, regles)
                     return self._afficher(message="Enregistré.")
+                if self.path == "/abview":
+                    enregistrer_abview(cfg, (champs.get("nom") or [""])[0])
+                    return self._afficher(message="Nom enregistré.")
                 if self.path == "/restaurer":
                     restaurer(cfg, (champs.get("nom") or [""])[0])
                     return self._afficher(message="Version restaurée.")

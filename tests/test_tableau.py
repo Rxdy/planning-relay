@@ -285,3 +285,51 @@ def test_rappels_illisibles_ou_hors_limites_refuses(cfg):
         appliquer(cfg, **{f"p{i}_rappels": "bientôt"})
     with pytest.raises(ValueError, match="0 à 672"):
         appliquer(cfg, **{f"p{i}_rappels": "700"})
+
+
+# --- AbView : nom de l'en-tête -----------------------------------------------------
+
+def test_abview_nom_ecrit_dans_le_volume_et_relu(cfg, tmp_path):
+    assert tableau.lire_abview(cfg) == {}
+    tableau.enregistrer_abview(cfg, "  Famille   Alves ")
+    assert json.loads((tmp_path / "abview.json").read_text(encoding="utf-8")) == {"name": "Famille Alves"}
+    assert tableau.lire_abview(cfg) == {"name": "Famille Alves"}
+    assert 'value="Famille Alves"' in tableau.page(tableau.lire(cfg), "JT", abview=tableau.lire_abview(cfg))
+
+
+def test_abview_nom_vide_revient_au_nom_livre(cfg, tmp_path):
+    tableau.enregistrer_abview(cfg, "Alves")
+    tableau.enregistrer_abview(cfg, "")
+    assert not (tmp_path / "abview.json").exists()
+
+
+def test_abview_nom_conserve_les_autres_reglages(cfg, tmp_path):
+    (tmp_path / "abview.json").write_text('{"name": "A", "autre": 1}')
+    tableau.enregistrer_abview(cfg, "B")
+    assert tableau.lire_abview(cfg) == {"name": "B", "autre": 1}
+
+
+@pytest.mark.parametrize("nom", ["x" * 41, "a\x00b", "a\nb\x07"])
+def test_abview_nom_refuse_trop_long_ou_caracteres_speciaux(cfg, nom):
+    with pytest.raises(ValueError):
+        tableau.enregistrer_abview(cfg, nom)
+
+
+def test_abview_fichier_abime_ne_casse_pas_la_page(cfg, tmp_path):
+    (tmp_path / "abview.json").write_text("{pas du json")
+    assert tableau.lire_abview(cfg) == {}
+
+
+def test_abview_la_page_echappe_le_nom(cfg):
+    html = tableau.page(tableau.lire(cfg), "JT", abview={"name": '"><script>x</script>'})
+    assert "<script>x" not in html
+
+
+def test_http_abview_enregistre_le_nom(serveur, cfg, tmp_path):
+    assert requete(serveur, "POST", "/abview", {"jeton": "FAUX", "nom": "Hack"})[0] == 403
+    assert not (tmp_path / "abview.json").exists()
+    statut, html = requete(serveur, "POST", "/abview", {"jeton": "JT", "nom": "Alves"})
+    assert statut == 200 and "Nom enregistré." in html
+    assert tableau.lire_abview(cfg) == {"name": "Alves"}
+    statut, html = requete(serveur, "POST", "/abview", {"jeton": "JT", "nom": "x" * 50})
+    assert "40 caractères" in html and tableau.lire_abview(cfg) == {"name": "Alves"}
